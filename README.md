@@ -121,4 +121,4 @@ I give thanks to Microverse community for investing in me. I am looking forth to
 
 ## 📝 License <a name="license"></a>
 
-This project is [MIT](./LICENSE.md) licensed.
+This project is [MIT](LICENSE) licensed.

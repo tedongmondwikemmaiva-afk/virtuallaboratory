@@ -243,7 +243,7 @@ Public Class SplashForm
 
     Private Sub DrawFooter(g As Graphics)
         Using f As New Font("Segoe UI", 9, FontStyle.Regular)
-            Dim text As String = "Version 1.0.0 · © 2026 ChemLab Virtual"
+            Dim text As String = "Version 1.0.0 · © 2026 Codegisoft Academy 652278121/673927826"
             Using brush As New SolidBrush(Color.FromArgb(110, 118, 140))
                 Dim size As SizeF = g.MeasureString(text, f)
                 g.DrawString(text, f, brush, (Me.Width - size.Width) / 2.0F, Me.Height - 40)

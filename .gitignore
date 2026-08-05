@@ -1,7 +1,6 @@
 # Visual Studio / .NET generated files
 .vs/
 .vscode/
-bin/
 obj/
 *.user
 *.suo

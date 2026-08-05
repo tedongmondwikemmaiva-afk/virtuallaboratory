@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>ChemLabSplash</RootNamespace>
+    <StartupObject>ChemLabSplash.Program</StartupObject>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+</Project>

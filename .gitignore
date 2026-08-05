@@ -1,0 +1,17 @@
+# Visual Studio / .NET generated files
+.vs/
+.vscode/
+obj/
+*.user
+*.suo
+*.cache
+*.log
+*.pdb
+*.tmp
+*.nupkg
+TestResults/
+packages/
+
+# OS files
+.DS_Store
+Thumbs.db

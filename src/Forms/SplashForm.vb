@@ -66,8 +66,8 @@ Public Class SplashForm
         If currentProgress >= 100 Then
             currentProgress = 100
             progressTimer.Stop()
-            ' Optionally auto-close and hand off to your main form:
-            ' Me.Close()
+            ' Auto-close when loading completes
+            Me.Close()
         End If
 
         Me.Invalidate()

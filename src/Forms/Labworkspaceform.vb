@@ -3,7 +3,7 @@ Imports System.Collections.Generic
 Imports System.Drawing
 Imports System.Drawing.Drawing2D
 Imports System.Windows.Forms
-Namespace ChemLabDesign
+labworkspace ChemLabDesign
 
     ''' <summary>
     ''' Central color / font palette matching the reference UI (dark navy glass theme
@@ -247,4 +247,4 @@ Namespace ChemLabDesign
         End Sub
     End Class
 
-End Namespace
+End labworkspace

@@ -295,7 +295,18 @@ Public Class ApparatusForm
         preview.Location = New Point(10, 10)
         preview.Size = New Size(w - 20, 90)
         card.Controls.Add(preview)
-        AddHandler preview.Paint, Sub(s, e) DrawTestTubesIcon(e.Graphics, preview.Width, preview.Height)
+        AddHandler preview.Paint, Sub(s, e)
+                                       Select Case itemName
+                                           Case "Beaker"
+                                               DrawBeakerIcon(e.Graphics, preview.Width, preview.Height)
+                                           Case "Conical Flask", "Round Flask"
+                                               DrawFlaskIcon(e.Graphics, preview.Width, preview.Height)
+                                           Case "Bunsen Burner"
+                                               DrawBunsenIcon(e.Graphics, preview.Width, preview.Height)
+                                           Case Else
+                                               DrawTestTubesIcon(e.Graphics, preview.Width, preview.Height)
+                                       End Select
+                                   End Sub
 
         Dim lblInfo As New Label() With {.Text = "ⓘ", .Font = New Font("Segoe UI", 9), .ForeColor = Color.FromArgb(150, 158, 180),
                                           .AutoSize = True, .BackColor = Color.Transparent}
@@ -323,6 +334,73 @@ Public Class ApparatusForm
         lnkDetails.Location = New Point(w - 20 - lnkDetails.PreferredWidth, h - 30)
         AddHandler lnkDetails.LinkClicked, Sub() MessageBox.Show($"{itemName} — {capacity} ({status})", "Apparatus details")
         card.Controls.Add(lnkDetails)
+    End Sub
+
+    Private Sub DrawBeakerIcon(g As Graphics, w As Integer, h As Integer)
+        g.SmoothingMode = SmoothingMode.AntiAlias
+        Dim cx As Single = w / 2.0F
+        Dim cy As Single = h / 2.0F
+        Using pen As New Pen(Color.FromArgb(80, 220, 210), 2.4F)
+            pen.LineJoin = LineJoin.Round
+            pen.StartCap = LineCap.Round
+            pen.EndCap = LineCap.Round
+            ' simple trapezoid beaker
+            Dim topL As New PointF(cx - 28, cy - 20)
+            Dim topR As New PointF(cx + 28, cy - 20)
+            Dim botL As New PointF(cx - 18, cy + 22)
+            Dim botR As New PointF(cx + 18, cy + 22)
+            g.DrawLine(pen, topL, topR)
+            g.DrawLine(pen, topL, botL)
+            g.DrawLine(pen, topR, botR)
+            g.DrawLine(pen, botL, botR)
+            Using fillBrush As New SolidBrush(Color.FromArgb(60, 80, 220, 210))
+                g.FillPolygon(fillBrush, {topL, topR, botR, botL})
+            End Using
+        End Using
+    End Sub
+
+    Private Sub DrawFlaskIcon(g As Graphics, w As Integer, h As Integer)
+        g.SmoothingMode = SmoothingMode.AntiAlias
+        Dim cx As Single = w / 2.0F
+        Dim cy As Single = h / 2.0F
+        Using pen As New Pen(Color.FromArgb(220, 220, 220), 2.4F)
+            pen.LineJoin = LineJoin.Round
+            pen.StartCap = LineCap.Round
+            pen.EndCap = LineCap.Round
+            Dim neckTop As New PointF(cx, cy - 26)
+            Dim neckLeft As New PointF(cx - 6, cy - 6)
+            Dim neckRight As New PointF(cx + 6, cy - 6)
+            Dim bodyLeft As New PointF(cx - 18, cy + 18)
+            Dim bodyRight As New PointF(cx + 18, cy + 18)
+            g.DrawLine(pen, New PointF(neckTop.X - 6, neckTop.Y), New PointF(neckTop.X + 6, neckTop.Y))
+            g.DrawLine(pen, New PointF(neckTop.X - 4, neckTop.Y), neckLeft)
+            g.DrawLine(pen, New PointF(neckTop.X + 4, neckTop.Y), neckRight)
+            g.DrawLine(pen, neckLeft, bodyLeft)
+            g.DrawLine(pen, neckRight, bodyRight)
+            Dim basePts() As PointF = {bodyLeft, New PointF(bodyLeft.X + 6, bodyLeft.Y + 6), New PointF(bodyRight.X - 6, bodyRight.Y + 6), bodyRight}
+            g.DrawLines(pen, basePts)
+            Using fillBrush As New SolidBrush(Color.FromArgb(60, 120, 180, 240))
+                g.FillEllipse(fillBrush, cx - 12, cy, 24, 18)
+            End Using
+        End Using
+    End Sub
+
+    Private Sub DrawBunsenIcon(g As Graphics, w As Integer, h As Integer)
+        g.SmoothingMode = SmoothingMode.AntiAlias
+        Dim cx As Single = w / 2.0F
+        Dim cy As Single = h / 2.0F
+        Using pen As New Pen(Color.FromArgb(200, 180, 140), 2.0F)
+            pen.LineJoin = LineJoin.Round
+            pen.StartCap = LineCap.Round
+            pen.EndCap = LineCap.Round
+            ' flame
+            Using flame As New SolidBrush(Color.FromArgb(220, 140, 60))
+                g.FillEllipse(flame, cx - 8, cy - 30, 16, 28)
+            End Using
+            ' burner body
+            g.DrawRectangle(pen, cx - 6, cy - 4, 12, 20)
+            g.DrawLine(pen, cx - 12, cy + 18, cx + 12, cy + 18)
+        End Using
     End Sub
 
     Private Function StatusColors(status As String) As (Color, Color)

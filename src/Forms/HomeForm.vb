@@ -229,9 +229,19 @@ Public Class HomeForm
         item.Controls.Add(lbl)
 
         If Not isActive Then
-            Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
-            AddHandler item.Click, handler
-            AddHandler lbl.Click, handler
+            If label = "Apparatus" Then
+                Dim openHandler As EventHandler = Sub()
+                                                     Using frm As New ApparatusForm(userName, userRole)
+                                                         frm.ShowDialog(Me)
+                                                     End Using
+                                                 End Sub
+                AddHandler item.Click, openHandler
+                AddHandler lbl.Click, openHandler
+            Else
+                Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                AddHandler item.Click, handler
+                AddHandler lbl.Click, handler
+            End If
             AddHandler item.MouseEnter, Sub()
                                            item.FillColor = Color.FromArgb(22, 26, 46)
                                            item.Invalidate()

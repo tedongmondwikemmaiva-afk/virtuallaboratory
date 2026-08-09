@@ -13,6 +13,11 @@
     <PackageReference Include="MaterialSkin.2" Version="2.3.1" />
   </ItemGroup>
 
+  <!-- Explicit compile include for Quizzes.vb to ensure Visual Studio recognizes it in the project -->
+  <ItemGroup>
+    <Compile Include="src\Forms\Quizzes.vb" />
+  </ItemGroup>
+
   <ItemGroup>
     <Compile Update="My Project\Resources.Designer.vb">
       <DesignTime>True</DesignTime>

@@ -26,6 +26,7 @@ Public Class ApparatusForm
 
     ' name, capacity, status ("On bench" / "Selected" / "Hidden" / "In shelf")
     Private ReadOnly items As (String, String, String)() = {
+        ("Test Tubes", "Set of 6", "Selected"),
         ("Conical Flask", "Capacity 250 ml", "On bench"),
         ("Beaker", "Capacity 500 ml", "On bench"),
         ("Round Flask", "Capacity 250 ml", "Selected"),
@@ -250,26 +251,15 @@ Public Class ApparatusForm
         AddHandler btnAdd.Click, Sub() MessageBox.Show("Add-to-bench flow coming soon.", "ChemLab Virtual")
         content.Controls.Add(btnAdd)
 
-        ' ----- card grid: 4 columns -----
-        Const cols As Integer = 4
-        Dim gap As Integer = 20
-        Dim gridTop As Integer = 108
-        Dim cardW As Integer = (content.Width - 72 - gap * (cols - 1)) \ cols
-        Dim cardH As Integer = 176
+        ' ----- card grid -----
+        ' Render the grid based on current content size; re-render on resize so card widths are valid
+        RenderGrid()
 
-        For i As Integer = 0 To items.Length - 1
-            Dim row As Integer = i \ cols
-            Dim col As Integer = i Mod cols
-            Dim cx As Integer = 36 + col * (cardW + gap)
-            Dim cy As Integer = gridTop + row * (cardH + gap)
-            BuildApparatusCard(items(i).Item1, items(i).Item2, items(i).Item3, cx, cy, cardW, cardH)
-        Next
-
-        Dim gridRows As Integer = CInt(Math.Ceiling(items.Length / CDbl(cols)))
-        Dim gridBottom As Integer = gridTop + gridRows * cardH + (gridRows - 1) * gap
-
-        ' ----- info banner -----
-        BuildInfoBanner(36, gridBottom + 24, content.Width - 72)
+        ' reposition the Add button and re-render grid when content resizes
+        AddHandler content.Resize, Sub()
+                                        btnAdd.Location = New Point(Math.Max(36, content.ClientSize.Width - 36 - btnAdd.Width), 28)
+                                        RenderGrid()
+                                    End Sub
 
         ' ----- floating bottom toolbar -----
         BuildBottomToolbar()
@@ -285,6 +275,7 @@ Public Class ApparatusForm
         card.Location = New Point(x, y)
         card.Size = New Size(w, h)
         card.Anchor = AnchorStyles.Top Or AnchorStyles.Left
+        card.Tag = "apparatusCard"
         content.Controls.Add(card)
 
         ' preview / icon area
@@ -323,6 +314,54 @@ Public Class ApparatusForm
         lnkDetails.Location = New Point(w - 20 - lnkDetails.PreferredWidth, h - 30)
         AddHandler lnkDetails.LinkClicked, Sub() MessageBox.Show($"{itemName} — {capacity} ({status})", "Apparatus details")
         card.Controls.Add(lnkDetails)
+    End Sub
+
+    ' Render (or re-render) the card grid. Removes previously-added cards and the info banner
+    ' then lays out cards based on the current content.ClientSize.Width so controls are visible
+    Private Sub RenderGrid()
+        If content Is Nothing Then Return
+
+        ' remove previous cards and banner
+        Dim toRemove As New List(Of Control)()
+        For Each c As Control In content.Controls
+            If c.Tag IsNot Nothing AndAlso (c.Tag.ToString() = "apparatusCard" OrElse c.Tag.ToString() = "apparatusBanner") Then
+                toRemove.Add(c)
+            End If
+        Next
+        For Each c In toRemove
+            content.Controls.Remove(c)
+            c.Dispose()
+        Next
+
+        ' layout
+        Const cols As Integer = 4
+        Dim gap As Integer = 20
+        Dim gridTop As Integer = 108
+        Dim cardW As Integer = 0
+        Dim cardH As Integer = 176
+
+        cardW = (Math.Max(1, content.ClientSize.Width) - 72 - gap * (cols - 1)) \ cols
+        If cardW < 140 Then cardW = Math.Max(140, (Math.Max(1, content.ClientSize.Width) - 72) \ cols)
+
+        For i As Integer = 0 To items.Length - 1
+            Dim row As Integer = i \ cols
+            Dim col As Integer = i Mod cols
+            Dim cx As Integer = 36 + col * (cardW + gap)
+            Dim cy As Integer = gridTop + row * (cardH + gap)
+            BuildApparatusCard(items(i).Item1, items(i).Item2, items(i).Item3, cx, cy, cardW, cardH)
+            ' If this is the Test Tubes item, ensure it is scrolled into view so the user sees it immediately
+            If items(i).Item1 = "Test Tubes" Then
+                ' The card is the last control added to content
+                Dim lastCard = content.Controls(content.Controls.Count - 1)
+                content.ScrollControlIntoView(lastCard)
+            End If
+        Next
+
+        Dim gridRows As Integer = CInt(Math.Ceiling(items.Length / CDbl(cols)))
+        Dim gridBottom As Integer = gridTop + gridRows * cardH + (gridRows - 1) * gap
+
+        ' recreate info banner (tagged so it can be removed on next render)
+        BuildInfoBanner(36, gridBottom + 24, content.ClientSize.Width - 72)
     End Sub
 
     Private Function StatusColors(status As String) As (Color, Color)
@@ -366,6 +405,7 @@ Public Class ApparatusForm
 
     Private Sub BuildInfoBanner(x As Integer, y As Integer, w As Integer)
         Dim banner As New RoundedPanel()
+        banner.Tag = "apparatusBanner"
         banner.CornerRadius = 12
         banner.FillColor = Color.FromArgb(15, 19, 36)
         banner.BorderColor = Color.FromArgb(34, 39, 64)

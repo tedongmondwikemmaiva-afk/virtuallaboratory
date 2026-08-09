@@ -26,7 +26,7 @@ Public Class ApparatusForm
 
     ' name, capacity, status ("On bench" / "Selected" / "Hidden" / "In shelf")
     Private ReadOnly items As (String, String, String)() = {
-        ("Test Tubes", "Set of 6", "Selected"),
+        ("Test Tubes", "Set of 6", "On bench"),
         ("Conical Flask", "Capacity 250 ml", "On bench"),
         ("Beaker", "Capacity 500 ml", "On bench"),
         ("Round Flask", "Capacity 250 ml", "Selected"),
@@ -198,10 +198,18 @@ Public Class ApparatusForm
         item.Controls.Add(lbl)
 
         If Not isActive Then
-            Dim handler As EventHandler = Sub()
+            Dim handler As EventHandler = Sub(sender, e)
                                                If iconKey = "home" Then
                                                    Me.DialogResult = DialogResult.Cancel ' just close, no logout
                                                    Me.Close()
+                                               ElseIf iconKey = "question" Then
+                                                   ' Open the Quizzes form
+                                                   Try
+                                                       Dim qf As New Quizzes(userName, userRole)
+                                                       qf.ShowDialog()
+                                                   Catch ex As Exception
+                                                       MessageBox.Show("Failed to open Quizzes: " & ex.Message, "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                                   End Try
                                                Else
                                                    MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
                                                End If

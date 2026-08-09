@@ -494,7 +494,7 @@ Public Class Quizzes
 
     Private Sub UpdateProgressBar()
         If progressTrack Is Nothing OrElse progressFill Is Nothing Then Return
-        Dim answered As Integer = questions.Count(Function(q) q.Selected >= 0)
+        Dim answered As Integer = questions.Where(Function(q) q.Selected >= 0).Count()
         Dim ratio As Double = If(questions.Count = 0, 0, answered / CDbl(questions.Count))
         Dim fillW As Integer = CInt(progressTrack.Width * ratio)
         progressFill.Size = New Size(Math.Max(fillW, If(ratio > 0, 6, 0)), progressTrack.Height)
@@ -504,7 +504,7 @@ Public Class Quizzes
     Private Sub RecalculateAcidsAndBasesScore()
         Dim answered = questions.Where(Function(q) q.Selected >= 0).ToList()
         If answered.Count = 0 Then Return
-        Dim correct = answered.Count(Function(q) q.Selected = q.CorrectIndex)
+        Dim correct = answered.Where(Function(q) q.Selected = q.CorrectIndex).Count()
         Dim percent = CInt(Math.Round(correct / CDbl(answered.Count) * 100))
         UpdateScore("Acids & Bases", percent)
         UpdateProgressBar()

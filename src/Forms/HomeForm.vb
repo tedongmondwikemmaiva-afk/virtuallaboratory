@@ -237,6 +237,14 @@ Public Class HomeForm
                                                  End Sub
                 AddHandler item.Click, openHandler
                 AddHandler lbl.Click, openHandler
+            ElseIf label = "Quizzes" Then
+                Dim openHandler As EventHandler = Sub()
+                                                     Using frm As New Quizzes(userName, userRole)
+                                                         frm.ShowDialog(Me)
+                                                     End Using
+                                                 End Sub
+                AddHandler item.Click, openHandler
+                AddHandler lbl.Click, openHandler
             Else
                 Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 AddHandler item.Click, handler

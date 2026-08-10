@@ -6,34 +6,49 @@ Module Program
         Application.EnableVisualStyles()
         Application.SetCompatibleTextRenderingDefault(False)
 
-        ' Splash runs once, modally, then closes itself (on 100% or "Skip intro").
+        ' Use an ApplicationContext to ensure a single message loop and explicit control
+        ' over which form is shown first (LoginForm) after the splash screen.
+        Application.Run(New MainAppContext())
+    End Sub
+End Module
+
+' ApplicationContext that shows the splash once, then presents the login -> home/admin flow.
+Public Class MainAppContext
+    Inherits ApplicationContext
+
+    Public Sub New()
+        ' Show splash modally first
         Using splash As New SplashForm()
             splash.ShowDialog()
         End Using
 
-        ' Login <-> Home/Admin loop: logging out from Home/Admin returns here.
+        ' Enter the login loop. When the user closes without signing in, exit the app.
         Dim keepGoing As Boolean = True
         Do While keepGoing
             keepGoing = False
 
-            Dim login As New LoginForm()
-            Dim loginResult = login.ShowDialog()
+            Using login As New LoginForm()
+                Dim loginResult = login.ShowDialog()
 
-            If loginResult <> DialogResult.OK OrElse login.Outcome = LoginOutcome.Cancelled Then
-                Exit Do ' user closed the login screen without signing in -> exit app
-            End If
+                If loginResult <> DialogResult.OK OrElse login.Outcome = LoginOutcome.Cancelled Then
+                    Exit Do
+                End If
 
-            If login.SignedInRole = "Admin" Then
-                Using adminForm As New AdminDashboardForm(login.SignedInName)
-                    Dim r = adminForm.ShowDialog()
-                    keepGoing = (r = DialogResult.Retry) ' Retry == user logged out, go back to login
-                End Using
-            Else
-                Using homeForm As New HomeForm(login.SignedInName, login.SignedInRole)
-                    Dim r = homeForm.ShowDialog()
-                    keepGoing = (r = DialogResult.Retry)
-                End Using
-            End If
+                If login.SignedInRole = "Admin" Then
+                    Using adminForm As New AdminDashboardForm(login.SignedInName)
+                        Dim r = adminForm.ShowDialog()
+                        keepGoing = (r = DialogResult.Retry)
+                    End Using
+                Else
+                    Using homeForm As New HomeForm(login.SignedInName, login.SignedInRole)
+                        Dim r = homeForm.ShowDialog()
+                        keepGoing = (r = DialogResult.Retry)
+                    End Using
+                End If
+            End Using
         Loop
+
+        ' All done -> exit application
+        Me.ExitThread()
     End Sub
-End Module
+End Class

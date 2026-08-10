@@ -16,20 +16,29 @@ Module Program
         Do While keepGoing
             keepGoing = False
 
-            Dim login As New LoginForm()
-            Dim loginResult = login.ShowDialog()
+            Dim loginResult As DialogResult
+            Dim outcome As LoginOutcome
+            Dim signedInRole As String
+            Dim signedInName As String
 
-            If loginResult <> DialogResult.OK OrElse login.Outcome = LoginOutcome.Cancelled Then
+            Using login As New LoginForm()
+                loginResult = login.ShowDialog()
+                outcome = login.Outcome
+                signedInRole = login.SignedInRole
+                signedInName = login.SignedInName
+            End Using
+
+            If loginResult <> DialogResult.OK OrElse outcome = LoginOutcome.Cancelled Then
                 Exit Do ' user closed the login screen without signing in -> exit app
             End If
 
-            If login.SignedInRole = "Admin" Then
-                Using adminForm As New AdminDashboardForm(login.SignedInName)
+            If signedInRole = "Admin" Then
+                Using adminForm As New AdminDashboardForm(signedInName)
                     Dim r = adminForm.ShowDialog()
                     keepGoing = (r = DialogResult.Retry) ' Retry == user logged out, go back to login
                 End Using
             Else
-                Using homeForm As New HomeForm(login.SignedInName, login.SignedInRole)
+                Using homeForm As New HomeForm(signedInName, signedInRole)
                     Dim r = homeForm.ShowDialog()
                     keepGoing = (r = DialogResult.Retry)
                 End Using

@@ -404,11 +404,14 @@ Public Class ApparatusForm
             ix += 38
         Next
 
-        AddHandler content.Resize, Sub()
-                                        toolbar.Location = New Point((content.Width - toolbar.Width) \ 2, content.Height - 70)
-                                    End Sub
-        toolbar.Location = New Point((content.Width - toolbar.Width) \ 2, content.Height - 70)
-    End Sub
+        Dim updateToolbarPos As Action = Sub()
+                                             toolbar.Location = New Point((content.ClientSize.Width - toolbar.Width) \ 2 - content.AutoScrollPosition.X,
+                                                                          content.ClientSize.Height - 70 - content.AutoScrollPosition.Y)
+                                         End Sub
+
+        AddHandler content.Resize, Sub() updateToolbarPos()
+        AddHandler content.Scroll, Sub() updateToolbarPos()
+        updateToolbarPos()
 
     ' ===================== SHARED DRAWING =====================
 

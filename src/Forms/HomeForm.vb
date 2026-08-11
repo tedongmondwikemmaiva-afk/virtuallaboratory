@@ -242,6 +242,22 @@ Public Class HomeForm
                                                End Sub
                 AddHandler item.Click, openApp
                 AddHandler lbl.Click, openApp
+            ElseIf iconKey = "beaker" Then
+                ' Open the Chemicals screen from Home.
+                Dim openChem As EventHandler = Sub()
+                                                   Try
+                                                       MessageBox.Show("Opening Chemicals form...", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                                                       Using cf As New ChemicalsForm(userName, userRole)
+                                                           cf.StartPosition = FormStartPosition.CenterParent
+                                                           Dim res = cf.ShowDialog()
+                                                           MessageBox.Show($"Chemicals closed with result: {res}", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                                                       End Using
+                                                   Catch ex As Exception
+                                                       MessageBox.Show($"Failed to open Chemicals: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                                   End Try
+                                               End Sub
+                AddHandler item.Click, openChem
+                AddHandler lbl.Click, openChem
             Else
                 Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 AddHandler item.Click, handler

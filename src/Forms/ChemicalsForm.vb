@@ -4,11 +4,12 @@ Imports System.Runtime.InteropServices
 Imports System.Windows.Forms
 
 ''' <summary>
-''' "Apparatus" screen: grid of 3D lab-equipment items the student can drag onto
-''' the bench or toggle visibility for. Mirrors the sidebar/title-bar chrome used
-''' by HomeForm so the two screens feel like the same app.
+''' "Chemicals" screen: reagent shelf listing name, formula, concentration and
+''' hazard class for every stocked chemical, with a "Pour into…" action per row.
+''' Mirrors the sidebar/title-bar chrome used by HomeForm/ApparatusForm so every
+''' screen feels like the same app.
 ''' </summary>
-Public Class ApparatusForm
+Public Class ChemicalsForm
     Inherits Form
 
     <DllImport("user32.dll")>
@@ -26,17 +27,16 @@ Public Class ApparatusForm
     Private sidebar As Panel
     Private titleBar As Panel
     Private content As Panel
+    Private tableHeaderLbl As Label
 
-    ' name, capacity ("—" for none), status ("On bench" / "Selected" / "Hidden" / "In shelf")
-    Private ReadOnly apparatusItems As (String, String, String)() = {
-        ("Conical Flask", "250 ml", "On bench"),
-        ("Beaker", "500 ml", "On bench"),
-        ("Round Flask", "250 ml", "Selected"),
-        ("Bunsen Burner", "—", "On bench"),
-        ("Molecular Model", "—", "Hidden"),
-        ("Clamp Stand", "—", "On bench"),
-        ("Burette", "50 ml", "In shelf"),
-        ("Test Tube Rack", "6 tubes", "In shelf")
+    ' name, formula, concentration, hazard label, dot color, hazard badge color
+    Private ReadOnly reagents As (String, String, String, String, Color)() = {
+        ("Hydrochloric Acid", "HCl", "1.0 M", "Corrosive", Color.FromArgb(230, 80, 70)),
+        ("Sodium Hydroxide", "NaOH", "1.0 M", "Corrosive", Color.FromArgb(64, 200, 210)),
+        ("Copper Sulphate", "CuSO" & ChrW(8324), "0.5 M", "Irritant", Color.FromArgb(70, 140, 230)),
+        ("Silver Nitrate", "AgNO" & ChrW(8323), "0.1 M", "Oxidiser", Color.FromArgb(210, 214, 224)),
+        ("Phenolphthalein", "C" & ChrW(8322) & ChrW(8320) & "H" & ChrW(8321) & ChrW(8324) & "O" & ChrW(8324), "Indicator", "Flammable", Color.FromArgb(232, 90, 160)),
+        ("Calcium Carbonate", "CaCO" & ChrW(8323), "Solid", "Low risk", Color.FromArgb(224, 226, 232))
     }
 
     Public Sub New(Optional displayName As String = "Mac Falen", Optional role As String = "Student")
@@ -45,10 +45,10 @@ Public Class ApparatusForm
 
         Me.FormBorderStyle = FormBorderStyle.None
         Me.Size = New Size(1500, 900)
-        Me.StartPosition = FormStartPosition.CenterScreen
+        Me.StartPosition = FormStartPosition.CenterParent
         Me.DoubleBuffered = True
         Me.BackColor = Color.FromArgb(9, 12, 24)
-        Me.Text = "ChemLab Virtual — Apparatus"
+        Me.Text = "ChemLab Virtual — Chemicals"
 
         BuildTitleBar()
         BuildSidebar()
@@ -65,7 +65,7 @@ Public Class ApparatusForm
         Me.Controls.Add(titleBar)
 
         Dim lblTitle As New Label()
-        lblTitle.Text = "ChemLab Virtual — Apparatus"
+        lblTitle.Text = "ChemLab Virtual — Chemicals"
         lblTitle.Font = New Font("Segoe UI", 9.5, FontStyle.Regular)
         lblTitle.ForeColor = Color.FromArgb(150, 158, 185)
         lblTitle.AutoSize = True
@@ -157,8 +157,8 @@ Public Class ApparatusForm
             ("home", "Home", False),
             ("flask", "Lab Workspace", False),
             ("book", "Experiments", False),
-            ("grid", "Apparatus", True),
-            ("beaker", "Chemicals", False),
+            ("grid", "Apparatus", False),
+            ("beaker", "Chemicals", True),
             ("notebook", "Lab Notebook", False),
             ("question", "Quizzes", False),
             ("chart", "Reports && Grades", False),
@@ -251,46 +251,14 @@ Public Class ApparatusForm
         item.Controls.Add(lbl)
 
         If isActive Then
-            ' Already on the Apparatus screen — nothing to do.
+            ' Already on the Chemicals screen — nothing to do.
         ElseIf iconKey = "home" Then
             Dim goHome As EventHandler = Sub()
-                                              Try
-                                                  Using hf As New HomeForm(userName, userRole)
-                                                      hf.StartPosition = FormStartPosition.CenterParent
-                                                      Dim res = hf.ShowDialog()
-                                                  End Using
-                                              Catch ex As Exception
-                                                  MessageBox.Show($"Failed to open Home: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                                              End Try
+                                              Me.DialogResult = DialogResult.Retry
+                                              Me.Close()
                                           End Sub
             AddHandler item.Click, goHome
             AddHandler lbl.Click, goHome
-        ElseIf iconKey = "apparatus" Then
-            Dim openApp As EventHandler = Sub()
-                                              Try
-                                                  Using af As New ApparatusForm(userName, userRole)
-                                                      af.StartPosition = FormStartPosition.CenterParent
-                                                      Dim res = af.ShowDialog()
-                                                  End Using
-                                              Catch ex As Exception
-                                                  MessageBox.Show($"Failed to open Apparatus: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                                              End Try
-                                          End Sub
-            AddHandler item.Click, openApp
-            AddHandler lbl.Click, openApp
-        ElseIf iconKey = "beaker" Then
-            Dim openChem As EventHandler = Sub()
-                                               Try
-                                                   Using cf As New ChemicalsForm(userName, userRole)
-                                                       cf.StartPosition = FormStartPosition.CenterParent
-                                                       Dim res = cf.ShowDialog()
-                                                   End Using
-                                               Catch ex As Exception
-                                                   MessageBox.Show($"Failed to open Chemicals: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                                               End Try
-                                           End Sub
-            AddHandler item.Click, openChem
-            AddHandler lbl.Click, openChem
         Else
             Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
             AddHandler item.Click, handler
@@ -329,7 +297,7 @@ Public Class ApparatusForm
         Me.Controls.SetChildIndex(content, 0)
 
         Dim lblTitle As New Label()
-        lblTitle.Text = "Apparatus"
+        lblTitle.Text = "Chemicals"
         lblTitle.Font = New Font("Segoe UI", 22, FontStyle.Bold)
         lblTitle.ForeColor = Color.White
         lblTitle.AutoSize = True
@@ -337,131 +305,329 @@ Public Class ApparatusForm
         content.Controls.Add(lblTitle)
 
         Dim lblSub As New Label()
-        lblSub.Text = "Drag any 3D item onto the bench, or toggle its visibility in the scene."
+        lblSub.Text = "Reagent shelf with concentrations, hazard classes and safety data."
         lblSub.Font = New Font("Segoe UI", 10.5)
         lblSub.ForeColor = Color.FromArgb(140, 148, 210)
         lblSub.AutoSize = True
         lblSub.Location = New Point(36, 62)
         content.Controls.Add(lblSub)
 
-        Dim btnAdd As New GradientButton()
-        btnAdd.Text = "+  Add to Bench"
-        btnAdd.Size = New Size(160, 40)
-        btnAdd.Anchor = AnchorStyles.Top Or AnchorStyles.Right
-        btnAdd.Location = New Point(content.Width - 160 - 36, 30)
-        AddHandler btnAdd.Click, Sub() MessageBox.Show("Choose an item below, then use 'Add to Bench' to place it on the workbench.", "ChemLab Virtual")
-        content.Controls.Add(btnAdd)
+        Dim btnSafety As New RoundedPanel()
+        btnSafety.CornerRadius = 9
+        btnSafety.FillColor = Color.FromArgb(22, 26, 46)
+        btnSafety.BorderColor = Color.FromArgb(40, 45, 70)
+        btnSafety.Size = New Size(134, 38)
+        btnSafety.Anchor = AnchorStyles.Top Or AnchorStyles.Right
+        btnSafety.Location = New Point(content.Width - 134 - 36, 30)
+        btnSafety.Cursor = Cursors.Hand
+        content.Controls.Add(btnSafety)
 
-        BuildCardsGrid()
+        Dim shieldIcon As New Panel()
+        shieldIcon.Size = New Size(16, 16)
+        shieldIcon.Location = New Point(16, 11)
+        AddHandler shieldIcon.Paint, Sub(s, e) DrawNavIcon(e.Graphics, "shield", Color.FromArgb(190, 196, 216))
+        btnSafety.Controls.Add(shieldIcon)
+
+        Dim lblSafety As New Label()
+        lblSafety.Text = "Safety Guide"
+        lblSafety.Font = New Font("Segoe UI", 9.5, FontStyle.Bold)
+        lblSafety.ForeColor = Color.FromArgb(210, 214, 230)
+        lblSafety.AutoSize = True
+        lblSafety.Location = New Point(38, 9)
+        btnSafety.Controls.Add(lblSafety)
+
+        Dim safetyHandler As EventHandler = Sub() MessageBox.Show("Safety Guide — hazard pictograms, PPE requirements and first-aid notes for every reagent on the shelf.", "ChemLab Virtual")
+        AddHandler btnSafety.Click, safetyHandler
+        AddHandler lblSafety.Click, safetyHandler
+        AddHandler shieldIcon.Click, safetyHandler
+
+        BuildSearchBox()
+        BuildReagentTable()
         BuildInfoBanner()
     End Sub
 
-    Private Sub BuildCardsGrid()
-        Const cols As Integer = 4
-        Const gap As Integer = 20
-        Const cardH As Integer = 178
-        Dim gridLeft As Integer = 36
-        Dim gridTop As Integer = 108
-        Dim gridWidth As Integer = Me.ClientSize.Width - sidebar.Width - 72
-        Dim cardW As Integer = (gridWidth - gap * (cols - 1)) \ cols
+    Private Sub BuildSearchBox()
+        Dim panelWidth As Integer = Me.ClientSize.Width - sidebar.Width - 72
 
-        For i As Integer = 0 To apparatusItems.Length - 1
-            Dim col As Integer = i Mod cols
-            Dim row As Integer = i \ cols
-            Dim x As Integer = gridLeft + col * (cardW + gap)
-            Dim y As Integer = gridTop + row * (cardH + gap)
-            CreateApparatusCard(apparatusItems(i).Item1, apparatusItems(i).Item2, apparatusItems(i).Item3, x, y, cardW, cardH)
+        Dim search As New RoundedPanel()
+        search.CornerRadius = 10
+        search.FillColor = Color.FromArgb(16, 20, 40)
+        search.BorderColor = Color.FromArgb(36, 41, 66)
+        search.Location = New Point(36, 84)
+        search.Size = New Size(panelWidth, 44)
+        search.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
+        content.Controls.Add(search)
+
+        Dim glassIcon As New Panel()
+        glassIcon.Size = New Size(16, 16)
+        glassIcon.Location = New Point(16, 14)
+        AddHandler glassIcon.Paint, Sub(s, e)
+                                         Dim g = e.Graphics
+                                         g.SmoothingMode = SmoothingMode.AntiAlias
+                                         Using pen As New Pen(Color.FromArgb(130, 138, 165), 1.6F)
+                                             g.DrawEllipse(pen, 1, 1, 10, 10)
+                                             g.DrawLine(pen, 10, 10, 15, 15)
+                                         End Using
+                                     End Sub
+        search.Controls.Add(glassIcon)
+
+        Dim txt As New TextBox()
+        txt.BorderStyle = BorderStyle.None
+        txt.BackColor = Color.FromArgb(16, 20, 40)
+        txt.ForeColor = Color.FromArgb(210, 214, 230)
+        txt.Font = New Font("Segoe UI", 10)
+        txt.Text = "Search reagents by name or formula…"
+        txt.ForeColor = Color.FromArgb(120, 128, 155)
+        txt.Location = New Point(42, 13)
+        txt.Width = panelWidth - 60
+        txt.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
+
+        AddHandler txt.GotFocus, Sub()
+                                      If txt.Text = "Search reagents by name or formula…" Then
+                                          txt.Text = ""
+                                          txt.ForeColor = Color.FromArgb(210, 214, 230)
+                                      End If
+                                  End Sub
+        AddHandler txt.LostFocus, Sub()
+                                       If txt.Text = "" Then
+                                           txt.Text = "Search reagents by name or formula…"
+                                           txt.ForeColor = Color.FromArgb(120, 128, 155)
+                                       End If
+                                   End Sub
+        AddHandler txt.TextChanged, Sub() FilterReagents(If(txt.ForeColor = Color.FromArgb(120, 128, 155), "", txt.Text))
+        search.Controls.Add(txt)
+    End Sub
+
+    Private Sub FilterReagents(query As String)
+        Dim q As String = query.Trim().ToLowerInvariant()
+        For Each row As Control In content.Controls
+            If TypeOf row Is RoundedPanel AndAlso row.Tag IsNot Nothing AndAlso TypeOf row.Tag Is String Then
+                Dim searchable As String = CStr(row.Tag)
+                row.Visible = (q = "") OrElse searchable.Contains(q)
+            End If
         Next
     End Sub
 
-    Private Sub CreateApparatusCard(name As String, capacity As String, status As String, x As Integer, y As Integer, w As Integer, h As Integer)
-        Dim isSelected As Boolean = (status = "Selected")
+    Private Sub BuildReagentTable()
+        Dim panelWidth As Integer = Me.ClientSize.Width - sidebar.Width - 72
+        Dim rowH As Integer = 46
+        Dim headerH As Integer = 44
+        Dim colHeaderH As Integer = 30
+        Dim tableTop As Integer = 148
+        Dim panelHeight As Integer = headerH + colHeaderH + reagents.Length * rowH + 12
 
-        Dim card As New RoundedPanel()
-        card.CornerRadius = 14
-        card.FillColor = Color.FromArgb(16, 20, 40)
-        card.BorderColor = If(isSelected, Color.FromArgb(108, 92, 231), Color.FromArgb(36, 41, 66))
-        card.Location = New Point(x, y)
-        card.Size = New Size(w, h)
-        content.Controls.Add(card)
+        Dim panel As New RoundedPanel()
+        panel.CornerRadius = 14
+        panel.FillColor = Color.FromArgb(14, 17, 34)
+        panel.BorderColor = Color.FromArgb(32, 37, 60)
+        panel.Location = New Point(36, tableTop)
+        panel.Size = New Size(panelWidth, panelHeight)
+        panel.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
+        content.Controls.Add(panel)
 
-        ' 3D-preview tile
-        Dim tile As New RoundedPanel()
-        tile.CornerRadius = 10
-        tile.FillColor = Color.FromArgb(21, 26, 48)
-        tile.BorderColor = Color.FromArgb(34, 39, 62)
-        tile.Location = New Point(16, 16)
-        tile.Size = New Size(w - 32, 92)
-        AddHandler tile.Paint, Sub(s, e) DrawGlasswareIcon(e.Graphics, tile.Width, tile.Height)
-        card.Controls.Add(tile)
+        Dim flaskIcon As New Panel()
+        flaskIcon.Size = New Size(16, 16)
+        flaskIcon.Location = New Point(18, 15)
+        AddHandler flaskIcon.Paint, Sub(s, e) DrawNavIcon(e.Graphics, "flask", Color.FromArgb(150, 130, 240))
+        panel.Controls.Add(flaskIcon)
 
-        Dim btnMore As New Label()
-        btnMore.Text = "⋮"
-        btnMore.Font = New Font("Segoe UI", 11, FontStyle.Bold)
-        btnMore.ForeColor = Color.FromArgb(140, 148, 170)
-        btnMore.Size = New Size(24, 22)
-        btnMore.TextAlign = ContentAlignment.MiddleCenter
-        btnMore.Location = New Point(w - 40, 14)
-        btnMore.Cursor = Cursors.Hand
-        AddHandler btnMore.Click, Sub() MessageBox.Show($"Options for '{name}' are coming soon.", "ChemLab Virtual")
-        card.Controls.Add(btnMore)
-        btnMore.BringToFront()
+        tableHeaderLbl = New Label()
+        tableHeaderLbl.Text = "Reagent shelf"
+        tableHeaderLbl.Font = New Font("Segoe UI", 10.5, FontStyle.Bold)
+        tableHeaderLbl.ForeColor = Color.White
+        tableHeaderLbl.AutoSize = True
+        tableHeaderLbl.Location = New Point(42, 13)
+        panel.Controls.Add(tableHeaderLbl)
+
+        Dim countBadge As New RoundedPanel()
+        countBadge.CornerRadius = 9
+        countBadge.FillColor = Color.FromArgb(24, 28, 50)
+        countBadge.BorderColor = Color.FromArgb(40, 45, 70)
+        countBadge.Size = New Size(64, 22)
+        countBadge.Location = New Point(panelWidth - 64 - 16, 11)
+        countBadge.Anchor = AnchorStyles.Top Or AnchorStyles.Right
+        panel.Controls.Add(countBadge)
+
+        Dim lblCount As New Label()
+        lblCount.Text = reagents.Length & " items"
+        lblCount.Font = New Font("Segoe UI", 8)
+        lblCount.ForeColor = Color.FromArgb(160, 168, 190)
+        lblCount.AutoSize = True
+        lblCount.Location = New Point(9, 4)
+        countBadge.Controls.Add(lblCount)
+
+        ' column x-positions (relative to panel)
+        Dim xReagent As Integer = 20
+        Dim xFormula As Integer = 300
+        Dim xConc As Integer = 460
+        Dim xHazard As Integer = 610
+        Dim xAction As Integer = panelWidth - 108
+
+        Dim colY As Integer = headerH
+        AddColumnLabel(panel, "REAGENT", xReagent, colY)
+        AddColumnLabel(panel, "FORMULA", xFormula, colY)
+        AddColumnLabel(panel, "CONCENTRATION", xConc, colY)
+        AddColumnLabel(panel, "HAZARD", xHazard, colY)
+        AddColumnLabel(panel, "ACTION", xAction, colY, ContentAlignment.MiddleRight, panelWidth - 20 - xAction)
+
+        Dim divider As New Panel()
+        divider.BackColor = Color.FromArgb(28, 32, 54)
+        divider.Height = 1
+        divider.Location = New Point(0, headerH + colHeaderH - 4)
+        divider.Width = panelWidth
+        divider.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
+        panel.Controls.Add(divider)
+
+        Dim rowY As Integer = headerH + colHeaderH
+        For Each r In reagents
+            BuildReagentRow(panel, r.Item1, r.Item2, r.Item3, r.Item4, r.Item5, rowY, rowH, panelWidth,
+                             xReagent, xFormula, xConc, xHazard, xAction)
+            rowY += rowH
+        Next
+    End Sub
+
+    Private Sub AddColumnLabel(panel As Panel, text As String, x As Integer, y As Integer,
+                                Optional align As ContentAlignment = ContentAlignment.MiddleLeft,
+                                Optional forcedWidth As Integer = 0)
+        Dim lbl As New Label()
+        lbl.Text = text
+        lbl.Font = New Font("Segoe UI", 7.5, FontStyle.Bold)
+        lbl.ForeColor = Color.FromArgb(120, 128, 155)
+        If forcedWidth > 0 Then
+            lbl.AutoSize = False
+            lbl.Size = New Size(forcedWidth, 18)
+            lbl.TextAlign = align
+            lbl.Anchor = AnchorStyles.Top Or AnchorStyles.Right
+        Else
+            lbl.AutoSize = True
+        End If
+        lbl.Location = New Point(x, y)
+        panel.Controls.Add(lbl)
+    End Sub
+
+    Private Sub BuildReagentRow(panel As Panel, name As String, formula As String, conc As String,
+                                 hazard As String, dotColor As Color, y As Integer, h As Integer, panelWidth As Integer,
+                                 xReagent As Integer, xFormula As Integer, xConc As Integer, xHazard As Integer, xAction As Integer)
+
+        Dim row As New RoundedPanel()
+        row.CornerRadius = 0
+        row.DrawBorder = False
+        row.FillColor = panel.BackColor
+        row.Location = New Point(4, y)
+        row.Size = New Size(panelWidth - 8, h - 2)
+        row.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
+        row.Tag = (name & " " & formula).ToLowerInvariant()
+        panel.Controls.Add(row)
+
+        AddHandler row.MouseEnter, Sub()
+                                        row.FillColor = Color.FromArgb(19, 23, 44)
+                                        row.Invalidate()
+                                    End Sub
+        AddHandler row.MouseLeave, Sub()
+                                        row.FillColor = panel.BackColor
+                                        row.Invalidate()
+                                    End Sub
+
+        Dim dot As New Panel()
+        dot.Size = New Size(12, 12)
+        dot.Location = New Point(xReagent, (h - 2 - 12) \ 2)
+        AddHandler dot.Paint, Sub(s, e)
+                                   e.Graphics.SmoothingMode = SmoothingMode.AntiAlias
+                                   Using br As New SolidBrush(dotColor)
+                                       e.Graphics.FillEllipse(br, 0, 0, 11, 11)
+                                   End Using
+                               End Sub
+        row.Controls.Add(dot)
 
         Dim lblName As New Label()
         lblName.Text = name
-        lblName.Font = New Font("Segoe UI", 10.5, FontStyle.Bold)
+        lblName.Font = New Font("Segoe UI", 9.5, FontStyle.Bold)
         lblName.ForeColor = Color.White
         lblName.AutoSize = True
-        lblName.Location = New Point(16, 116)
-        card.Controls.Add(lblName)
+        lblName.Location = New Point(xReagent + 22, (h - 2) \ 2 - 9)
+        row.Controls.Add(lblName)
 
-        Dim lblCapacity As New Label()
-        lblCapacity.Text = "Capacity " & capacity
-        lblCapacity.Font = New Font("Segoe UI", 8.5)
-        lblCapacity.ForeColor = Color.FromArgb(140, 148, 170)
-        lblCapacity.AutoSize = True
-        lblCapacity.Location = New Point(16, 136)
-        card.Controls.Add(lblCapacity)
+        Dim lblFormula As New Label()
+        lblFormula.Text = formula
+        lblFormula.Font = New Font("Segoe UI", 9.5)
+        lblFormula.ForeColor = Color.FromArgb(150, 130, 240)
+        lblFormula.AutoSize = True
+        lblFormula.Location = New Point(xFormula, (h - 2) \ 2 - 8)
+        row.Controls.Add(lblFormula)
 
-        Dim badge As New Label()
-        badge.Text = "  " & status & "  "
-        badge.Font = New Font("Segoe UI", 8, FontStyle.Bold)
-        badge.AutoSize = True
-        badge.Location = New Point(16, h - 36)
-        If isSelected Then
-            badge.BackColor = Color.FromArgb(108, 92, 231)
-            badge.ForeColor = Color.White
-        ElseIf status = "On bench" Then
-            badge.BackColor = Color.FromArgb(20, 60, 46)
-            badge.ForeColor = Color.FromArgb(120, 220, 170)
-        Else
-            badge.BackColor = Color.FromArgb(30, 34, 56)
-            badge.ForeColor = Color.FromArgb(150, 158, 180)
-        End If
-        card.Controls.Add(badge)
+        Dim lblConc As New Label()
+        lblConc.Text = conc
+        lblConc.Font = New Font("Segoe UI", 9.5)
+        lblConc.ForeColor = Color.FromArgb(190, 196, 216)
+        lblConc.AutoSize = True
+        lblConc.Location = New Point(xConc, (h - 2) \ 2 - 8)
+        row.Controls.Add(lblConc)
 
-        Dim lblDetails As New Label()
-        lblDetails.Text = "Details"
-        lblDetails.Font = New Font("Segoe UI", 9, FontStyle.Underline)
-        lblDetails.ForeColor = Color.FromArgb(150, 130, 240)
-        lblDetails.AutoSize = True
-        lblDetails.Cursor = Cursors.Hand
-        lblDetails.Location = New Point(w - 20 - TextRenderer.MeasureText("Details", lblDetails.Font).Width, h - 34)
-        AddHandler lblDetails.Click, Sub() MessageBox.Show($"Details for '{name}' — capacity {capacity}, status ""{status}"".", "ChemLab Virtual")
-        card.Controls.Add(lblDetails)
+        Dim badge As New RoundedPanel()
+        badge.CornerRadius = 8
+        badge.DrawBorder = False
+        Dim hazardColor As Color = Me.HazardColor(hazard)
+        badge.FillColor = BlendWithBackground(hazardColor, panel.BackColor, 0.2F)
+        badge.Size = New Size(TextRenderer.MeasureText(hazard, New Font("Segoe UI", 8, FontStyle.Bold)).Width + 20, 22)
+        badge.Location = New Point(xHazard, (h - 2 - 22) \ 2)
+        row.Controls.Add(badge)
+
+        Dim lblHazard As New Label()
+        lblHazard.Text = hazard
+        lblHazard.Font = New Font("Segoe UI", 8, FontStyle.Bold)
+        lblHazard.ForeColor = hazardColor
+        lblHazard.AutoSize = True
+        lblHazard.Location = New Point(10, 4)
+        badge.Controls.Add(lblHazard)
+
+        Dim lblAction As New Label()
+        lblAction.Text = "Pour into…"
+        lblAction.Font = New Font("Segoe UI", 9, FontStyle.Bold)
+        lblAction.ForeColor = Color.FromArgb(150, 130, 240)
+        lblAction.AutoSize = False
+        lblAction.Size = New Size(panelWidth - 20 - xAction, 20)
+        lblAction.TextAlign = ContentAlignment.MiddleRight
+        lblAction.Location = New Point(xAction, (h - 2) \ 2 - 9)
+        lblAction.Anchor = AnchorStyles.Top Or AnchorStyles.Right
+        lblAction.Cursor = Cursors.Hand
+        AddHandler lblAction.Click, Sub() MessageBox.Show($"Pouring {name} ({formula}) opens a volume dialog, then animates the transfer into the selected 3D vessel.", "ChemLab Virtual")
+        row.Controls.Add(lblAction)
     End Sub
 
+    ''' <summary>Blends a color toward a background at a given opacity, returning an opaque
+    ''' result — child controls don't alpha-composite against their parent, so this avoids
+    ''' badges that render against the wrong backdrop.</summary>
+    Private Function BlendWithBackground(fg As Color, bg As Color, alpha As Single) As Color
+        Dim r As Integer = CInt(fg.R * alpha + bg.R * (1 - alpha))
+        Dim g As Integer = CInt(fg.G * alpha + bg.G * (1 - alpha))
+        Dim b As Integer = CInt(fg.B * alpha + bg.B * (1 - alpha))
+        Return Color.FromArgb(r, g, b)
+    End Function
+
+    Private Function HazardColor(hazard As String) As Color
+        Select Case hazard
+            Case "Low risk"
+                Return Color.FromArgb(120, 220, 170)
+            Case Else
+                Return Color.FromArgb(232, 168, 92)
+        End Select
+    End Function
+
     Private Sub BuildInfoBanner()
-        Dim gridWidth As Integer = Me.ClientSize.Width - sidebar.Width - 72
-        Dim rows As Integer = CInt(Math.Ceiling(apparatusItems.Length / 4.0))
-        Dim bannerY As Integer = 108 + rows * (178 + 20) + 4
+        Dim panelWidth As Integer = Me.ClientSize.Width - sidebar.Width - 72
+        Dim rowH As Integer = 46
+        Dim headerH As Integer = 44
+        Dim colHeaderH As Integer = 30
+        Dim tableTop As Integer = 148
+        Dim tableHeight As Integer = headerH + colHeaderH + reagents.Length * rowH + 12
+        Dim bannerY As Integer = tableTop + tableHeight + 20
 
         Dim banner As New RoundedPanel()
         banner.CornerRadius = 12
         banner.FillColor = Color.FromArgb(16, 20, 40)
         banner.BorderColor = Color.FromArgb(36, 41, 66)
         banner.Location = New Point(36, bannerY)
-        banner.Size = New Size(gridWidth, 56)
+        banner.Size = New Size(panelWidth, 56)
         banner.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
         content.Controls.Add(banner)
 
@@ -481,11 +647,11 @@ Public Class ApparatusForm
         banner.Controls.Add(iconCircle)
 
         Dim lblInfo As New Label()
-        lblInfo.Text = "Each apparatus maps to a 3D model with attachment points. Selecting an item highlights its docking sockets on the bench so it can be clamped, heated or filled."
+        lblInfo.Text = "Pouring opens a volume dialog (ml) and animates the liquid transfer into the selected 3D vessel."
         lblInfo.Font = New Font("Segoe UI", 9)
         lblInfo.ForeColor = Color.FromArgb(160, 168, 190)
         lblInfo.Location = New Point(52, 18)
-        lblInfo.Size = New Size(gridWidth - 70, 34)
+        lblInfo.Size = New Size(panelWidth - 70, 34)
         lblInfo.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
         banner.Controls.Add(lblInfo)
     End Sub
@@ -513,32 +679,6 @@ Public Class ApparatusForm
         Using f As New Font("Segoe UI", 9, FontStyle.Bold)
             Dim sf As New StringFormat With {.Alignment = StringAlignment.Center, .LineAlignment = StringAlignment.Center}
             g.DrawString(initials, f, Brushes.White, rect, sf)
-        End Using
-    End Sub
-
-    ''' <summary>Simple two-test-tube glyph, centered in the given tile size, used for every card preview.</summary>
-    Private Sub DrawGlasswareIcon(g As Graphics, tileW As Integer, tileH As Integer)
-        g.SmoothingMode = SmoothingMode.AntiAlias
-        Dim accent As Color = Color.FromArgb(94, 234, 212)
-        Dim cx As Single = tileW / 2.0F
-        Dim cy As Single = tileH / 2.0F
-        Dim tubeW As Single = 14
-        Dim tubeH As Single = 44
-        Dim gap As Single = 10
-
-        Using pen As New Pen(accent, 2.4F) With {.StartCap = LineCap.Round, .EndCap = LineCap.Round}
-            For Each dx In New Single() {-(tubeW + gap) / 2, (tubeW + gap) / 2}
-                Dim topY As Single = cy - tubeH / 2
-                Dim botY As Single = cy + tubeH / 2
-                Dim leftX As Single = cx + dx - tubeW / 2
-                Dim rightX As Single = cx + dx + tubeW / 2
-                g.DrawLine(pen, leftX, topY, leftX, botY - 6)
-                g.DrawLine(pen, rightX, topY, rightX, botY - 6)
-                Dim path As New GraphicsPath()
-                path.AddArc(leftX, botY - 12, tubeW, 12, 0, 180)
-                g.DrawPath(pen, path)
-                g.DrawLine(pen, leftX - 3, topY, rightX + 3, topY)
-            Next
         End Using
     End Sub
 

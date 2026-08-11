@@ -6,13 +6,31 @@ Imports System.Windows.Forms
 Module UIHelpers
     Public Function RoundedRectPath(bounds As Rectangle, radius As Integer) As GraphicsPath
         Dim path As New GraphicsPath()
+
+        ' Guard: if bounds are empty or radius is non-positive, avoid AddArc calls
+        If bounds.Width <= 0 OrElse bounds.Height <= 0 Then
+            Return path
+        End If
+
+        If radius <= 0 Then
+            path.AddRectangle(bounds)
+            Return path
+        End If
+
         Dim d As Integer = radius * 2
         If d > bounds.Width Then d = bounds.Width
         If d > bounds.Height Then d = bounds.Height
-        path.AddArc(bounds.X, bounds.Y, d, d, 180, 90)
-        path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90)
-        path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90)
-        path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90)
+
+        ' If the calculated diameter is too small for arcs, fall back to rectangle
+        If d <= 1 Then
+            path.AddRectangle(bounds)
+            Return path
+        End If
+
+        path.AddArc(New Rectangle(bounds.X, bounds.Y, d, d), 180.0F, 90.0F)
+        path.AddArc(New Rectangle(bounds.Right - d, bounds.Y, d, d), 270.0F, 90.0F)
+        path.AddArc(New Rectangle(bounds.Right - d, bounds.Bottom - d, d, d), 0.0F, 90.0F)
+        path.AddArc(New Rectangle(bounds.X, bounds.Bottom - d, d, d), 90.0F, 90.0F)
         path.CloseFigure()
         Return path
     End Function

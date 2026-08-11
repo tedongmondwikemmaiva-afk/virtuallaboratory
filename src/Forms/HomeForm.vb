@@ -229,9 +229,24 @@ Public Class HomeForm
         item.Controls.Add(lbl)
 
         If Not isActive Then
-            Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
-            AddHandler item.Click, handler
-            AddHandler lbl.Click, handler
+            If iconKey = "grid" Then
+                ' Open the Apparatus screen from Home.
+                Dim openApp As EventHandler = Sub()
+                                                   Try
+                                                       Using af As New ApparatusForm(userName, userRole)
+                                                           af.ShowDialog()
+                                                       End Using
+                                                   Catch ex As Exception
+                                                       MessageBox.Show($"Failed to open Apparatus: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                                   End Try
+                                               End Sub
+                AddHandler item.Click, openApp
+                AddHandler lbl.Click, openApp
+            Else
+                Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                AddHandler item.Click, handler
+                AddHandler lbl.Click, handler
+            End If
             AddHandler item.MouseEnter, Sub()
                                            item.FillColor = Color.FromArgb(22, 26, 46)
                                            item.Invalidate()

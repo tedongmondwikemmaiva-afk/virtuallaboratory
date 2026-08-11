@@ -6,9 +6,12 @@ Module Program
         Application.EnableVisualStyles()
         Application.SetCompatibleTextRenderingDefault(False)
 
-        ' Use an ApplicationContext to ensure a single message loop and explicit control
-        ' over which form is shown first (LoginForm) after the splash screen.
-        Application.Run(New MainAppContext())
+        ' Start the full application flow (splash -> login -> home/admin).
+        Try
+            Application.Run(New MainAppContext())
+        Catch ex As Exception
+            MessageBox.Show($"Error launching application:\n{ex.ToString()}", "Startup Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
     End Sub
 End Module
 

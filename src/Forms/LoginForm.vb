@@ -47,6 +47,9 @@ Public Class RoundedPanel
                 End Using
             End If
         End Using
+        ' Ensure any external Paint event handlers attached to this control are invoked
+        ' (overriding OnPaint prevents the base implementation from raising the Paint event).
+        MyBase.OnPaint(e)
     End Sub
 End Class
 

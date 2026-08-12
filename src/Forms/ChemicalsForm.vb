@@ -259,6 +259,19 @@ Public Class ChemicalsForm
                                           End Sub
             AddHandler item.Click, goHome
             AddHandler lbl.Click, goHome
+        ElseIf iconKey = "cap" Then
+            Dim openTeacher As EventHandler = Sub()
+                                                 Try
+                                                     Using tf As New TeacherDashboardForm(userName, userRole)
+                                                         tf.StartPosition = FormStartPosition.CenterParent
+                                                         tf.ShowDialog()
+                                                     End Using
+                                                 Catch ex As Exception
+                                                     MessageBox.Show($"Failed to open Teacher Dashboard: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                                 End Try
+                                             End Sub
+            AddHandler item.Click, openTeacher
+            AddHandler lbl.Click, openTeacher
         Else
             Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
             AddHandler item.Click, handler

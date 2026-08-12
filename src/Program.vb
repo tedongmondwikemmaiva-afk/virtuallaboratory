@@ -1,6 +1,4 @@
-Imports System.Windows.Forms
-
-Module Program
+module Program
     <STAThread>
     Sub Main()
         Application.EnableVisualStyles()

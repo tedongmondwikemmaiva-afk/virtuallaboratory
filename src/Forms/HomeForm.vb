@@ -1,6 +1,7 @@
 Imports System.Drawing
 Imports System.Drawing.Drawing2D
 Imports System.Runtime.InteropServices
+Imports System.Reflection
 Imports System.Windows.Forms
 
 Public Class HomeForm
@@ -36,6 +37,27 @@ Public Class HomeForm
         BuildTitleBar()
         BuildSidebar()
         BuildContent()
+    End Sub
+
+    Private Sub OpenFormByName(formName As String, ParamArray ctorArgs() As Object)
+        Try
+            Dim asm = Assembly.GetExecutingAssembly()
+            Dim t = asm.GetTypes().FirstOrDefault(Function(x) x.Name = formName)
+            If t Is Nothing Then
+                MessageBox.Show($"Form '{formName}' not found.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End If
+            Dim instance = Activator.CreateInstance(t, ctorArgs)
+            If TypeOf instance Is Form Then
+                Dim f = DirectCast(instance, Form)
+                f.ShowDialog(Me)
+                f.Dispose()
+            Else
+                MessageBox.Show($"Type '{formName}' is not a Form.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End If
+        Catch ex As Exception
+            MessageBox.Show("Failed to open form: " & ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
     End Sub
 
     ' ===================== TITLE BAR =====================
@@ -270,6 +292,20 @@ Public Class HomeForm
                                                   End Sub
                 AddHandler item.Click, openTeacher
                 AddHandler lbl.Click, openTeacher
+            ElseIf iconKey = "chart" Then
+                ' Open Reports & Grades from Home.
+                Dim openReports As EventHandler = Sub()
+                                                     Try
+                                                         Using rf As New ReportsGrades(userName, userRole)
+                                                             rf.StartPosition = FormStartPosition.CenterParent
+                                                             rf.ShowDialog()
+                                                         End Using
+                                                     Catch ex As Exception
+                                                         MessageBox.Show($"Failed to open Reports & Grades: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                                     End Try
+                                                 End Sub
+                AddHandler item.Click, openReports
+                AddHandler lbl.Click, openReports
             Else
                 Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 AddHandler item.Click, handler

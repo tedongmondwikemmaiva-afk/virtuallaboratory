@@ -31,19 +31,19 @@ Public Class ForgotPasswordForm
     Private Sub BuildUI()
         Dim iconBox As New Panel() With {.Size = New Size(46, 46), .Location = New Point(32, 30)}
         AddHandler iconBox.Paint, Sub(s, e)
-                                       Dim g = e.Graphics
-                                       g.SmoothingMode = SmoothingMode.AntiAlias
-                                       Dim rect As New Rectangle(0, 0, 45, 45)
-                                       Using path = RoundedRectPath(rect, 14)
-                                           Using br As New LinearGradientBrush(rect, Color.FromArgb(108, 92, 231), Color.FromArgb(214, 82, 205), 45.0F)
-                                               g.FillPath(br, path)
-                                           End Using
-                                       End Using
-                                       Using pen As New Pen(Color.White, 1.8F)
-                                           g.DrawArc(pen, 15, 12, 15, 15, 180, 180)
-                                           g.DrawRectangle(pen, 13, 21, 19, 14)
-                                       End Using
-                                   End Sub
+                                      Dim g = e.Graphics
+                                      g.SmoothingMode = SmoothingMode.AntiAlias
+                                      Dim rect As New Rectangle(0, 0, 45, 45)
+                                      Using path = RoundedRectPath(rect, 14)
+                                          Using br As New LinearGradientBrush(rect, Color.FromArgb(108, 92, 231), Color.FromArgb(214, 82, 205), 45.0F)
+                                              g.FillPath(br, path)
+                                          End Using
+                                      End Using
+                                      Using pen As New Pen(Color.White, 1.8F)
+                                          g.DrawArc(pen, 15, 12, 15, 15, 180, 180)
+                                          g.DrawRectangle(pen, 13, 21, 19, 14)
+                                      End Using
+                                  End Sub
         card.Controls.Add(iconBox)
 
         Dim lblTitle As New Label() With {.Text = "Reset your password", .Font = New Font("Segoe UI", 16, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(32, 90)}
@@ -102,18 +102,18 @@ Public Class ForgotPasswordForm
 
         Dim iconPanel As New Panel() With {.Size = New Size(20, 20), .Location = New Point(14, 14), .BackColor = Color.Transparent}
         AddHandler iconPanel.Paint, Sub(s, e)
-                                         Dim g = e.Graphics
-                                         g.SmoothingMode = SmoothingMode.AntiAlias
-                                         Using pen As New Pen(Color.FromArgb(150, 158, 180), 1.6F)
-                                             If iconType = "person" Then
-                                                 g.DrawEllipse(pen, 5, 1, 10, 10)
-                                                 g.DrawArc(pen, 1, 11, 18, 14, 180, 180)
-                                             Else
-                                                 g.DrawArc(pen, 4, 0, 12, 12, 180, 180)
-                                                 g.DrawRectangle(pen, 2, 9, 16, 11)
-                                             End If
-                                         End Using
-                                     End Sub
+                                        Dim g = e.Graphics
+                                        g.SmoothingMode = SmoothingMode.AntiAlias
+                                        Using pen As New Pen(Color.FromArgb(150, 158, 180), 1.6F)
+                                            If iconType = "person" Then
+                                                g.DrawEllipse(pen, 5, 1, 10, 10)
+                                                g.DrawArc(pen, 1, 11, 18, 14, 180, 180)
+                                            Else
+                                                g.DrawArc(pen, 4, 0, 12, 12, 180, 180)
+                                                g.DrawRectangle(pen, 2, 9, 16, 11)
+                                            End If
+                                        End Using
+                                    End Sub
         fieldPanel.Controls.Add(iconPanel)
 
         Dim tb As New TextBox()
@@ -127,19 +127,19 @@ Public Class ForgotPasswordForm
         fieldPanel.Controls.Add(tb)
 
         AddHandler tb.Enter, Sub(s, e)
-                                  If tb.Text = placeholder Then
-                                      tb.Text = ""
-                                      tb.ForeColor = Color.FromArgb(230, 233, 240)
-                                      If isPassword Then tb.UseSystemPasswordChar = True
-                                  End If
-                              End Sub
+                                 If tb.Text = placeholder Then
+                                     tb.Text = ""
+                                     tb.ForeColor = Color.FromArgb(230, 233, 240)
+                                     If isPassword Then tb.UseSystemPasswordChar = True
+                                 End If
+                             End Sub
         AddHandler tb.Leave, Sub(s, e)
-                                  If tb.Text.Length = 0 Then
-                                      If isPassword Then tb.UseSystemPasswordChar = False
-                                      tb.Text = placeholder
-                                      tb.ForeColor = Color.FromArgb(120, 128, 150)
-                                  End If
-                              End Sub
+                                 If tb.Text.Length = 0 Then
+                                     If isPassword Then tb.UseSystemPasswordChar = False
+                                     tb.Text = placeholder
+                                     tb.ForeColor = Color.FromArgb(120, 128, 150)
+                                 End If
+                             End Sub
 
         Return tb
     End Function

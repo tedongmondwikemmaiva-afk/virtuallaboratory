@@ -304,6 +304,19 @@ Public Class ApparatusForm
                                              End Sub
             AddHandler item.Click, openTeacher
             AddHandler lbl.Click, openTeacher
+        ElseIf iconKey = "chart" Then
+            Dim openReports As EventHandler = Sub()
+                                                 Try
+                                                     Using rf As New ReportsGrades(userName, userRole)
+                                                         rf.StartPosition = FormStartPosition.CenterParent
+                                                         Dim res = rf.ShowDialog()
+                                                     End Using
+                                                 Catch ex As Exception
+                                                     MessageBox.Show($"Failed to open Reports & Grades: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                                 End Try
+                                             End Sub
+            AddHandler item.Click, openReports
+            AddHandler lbl.Click, openReports
         Else
             Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
             AddHandler item.Click, handler

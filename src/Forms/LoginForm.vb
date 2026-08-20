@@ -555,7 +555,7 @@ Public Class LoginForm
 
     ' ===================== ACTIONS =====================
 
-    Private Sub BtnEnter_Click(sender As Object, e As EventArgs)
+    Private Async Sub BtnEnter_Click(sender As Object, e As EventArgs)
         Dim userVal As String = If(txtUser.Text = PlaceholderUser, "", txtUser.Text).Trim()
         Dim passVal As String = If(txtPass.Text = PlaceholderPass, "", txtPass.Text)
 
@@ -565,20 +565,38 @@ Public Class LoginForm
             Return
         End If
 
-        ' TODO: replace this with a real call to your authentication/backend service.
-        ' This demo treats any email starting with "admin" as an administrator account,
-        ' and everyone else as a student, purely so the flow can be tested end-to-end.
-        If userVal.ToLower().StartsWith("admin") Then
-            SignedInRole = "Admin"
-            SignedInName = "Mac Falen"
-        Else
-            SignedInRole = "Student"
-            SignedInName = If(userVal.Contains("@"), CultureInfo_TitleCase(userVal.Split("@"c)(0)), CultureInfo_TitleCase(userVal))
+        ' Real authentication expects an email address, since that's what
+        ' users.email is keyed on. If someone types a bare Student ID with no
+        ' "@", we can't look them up yet — ask for the email instead of
+        ' silently failing.
+        If Not userVal.Contains("@") Then
+            MessageBox.Show("Please sign in with your email address.", "Sign in",
+                             MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
         End If
 
-        Outcome = LoginOutcome.SignedIn
-        Me.DialogResult = DialogResult.OK
-        Me.Close()
+        Dim clickedButton As Control = TryCast(sender, Control)
+        If clickedButton IsNot Nothing Then clickedButton.Enabled = False
+        Try
+            Dim user = Await UsersRepository.AuthenticateAsync(userVal, passVal)
+            If user Is Nothing Then
+                MessageBox.Show("Invalid email/password, or your Teacher account is still pending approval.",
+                                 "Sign in", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End If
+
+            SignedInRole = user.Role
+            SignedInName = user.DisplayName
+            Outcome = LoginOutcome.SignedIn
+            Me.DialogResult = DialogResult.OK
+            Me.Close()
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't reach the database: {ex.Message}" & vbCrLf &
+                             "Check your connection string in App.config and that MySQL is running.",
+                             "Sign in", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        Finally
+            If clickedButton IsNot Nothing Then clickedButton.Enabled = True
+        End Try
     End Sub
 
     Private Sub BtnGuest_Click(sender As Object, e As EventArgs)

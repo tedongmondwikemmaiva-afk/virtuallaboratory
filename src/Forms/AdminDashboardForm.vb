@@ -1,6 +1,8 @@
 Imports System.Drawing
 Imports System.Drawing.Drawing2D
+Imports System.Linq
 Imports System.Runtime.InteropServices
+Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 Public Class AdminDashboardForm
@@ -42,6 +44,32 @@ Public Class AdminDashboardForm
                                        BuildContent()
                                    End If
                                End Sub
+
+        AddHandler Me.Load, AddressOf LoadFromDbAsync
+    End Sub
+
+    ''' <summary>
+    ''' Loads real recent-activity rows and pending-teacher approvals from the
+    ''' database, replacing the offline fallback and re-rendering. Silently
+    ''' keeps the fallback if the database isn't reachable.
+    ''' </summary>
+    Private Async Sub LoadFromDbAsync(sender As Object, e As EventArgs)
+        Try
+            Dim activityTask = AdminRepository.GetRecentActivityAsync(5)
+            Dim pendingTask = AdminRepository.GetPendingTeachersAsync()
+            Await Task.WhenAll(activityTask, pendingTask)
+
+            If activityTask.Result.Count > 0 Then
+                activityRows = activityTask.Result.Select(Function(a) (a.Who, a.What, a.WhenText)).ToArray()
+            End If
+            ' Pending teachers legitimately can be empty (nothing awaiting approval),
+            ' so replace unconditionally rather than only when non-empty.
+            pendingTeachers = pendingTask.Result.Select(Function(p) (p.UserId, p.DisplayLine)).ToArray()
+
+            BuildContent()
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load admin dashboard data from database: {ex.Message}")
+        End Try
     End Sub
 
     Private Sub BuildTitleBar()
@@ -204,6 +232,22 @@ Public Class AdminDashboardForm
         sidebar.Controls.Add(item)
     End Sub
 
+    ' Offline fallback rows shown immediately; LoadFromDbAsync() (fired from
+    ' Form.Load) replaces these with real data and re-renders once it arrives.
+    Private activityRows As (String, String, String)() = {
+        ("Amara Okafor", "Completed 'Titration' with 94%", "2 min ago"),
+        ("Mr. Daniels (Teacher)", "Published a new experiment: 'Redox Reactions'", "18 min ago"),
+        ("Liam Chen", "Started 'Gas Evolution'", "42 min ago"),
+        ("New signup", "Priya Nair registered as a Student", "1 hr ago"),
+        ("System", "Weekly usage report generated", "3 hr ago")
+    }
+    ' UserId, DisplayLine — real rows carry a real user_id so Approve/Deny can
+    ' act on them; the offline fallback uses -1 since there's nothing to update.
+    Private pendingTeachers As (UserId As Integer, DisplayLine As String)() = {
+        (-1, "Dr. Sarah Whitfield — Chemistry Dept."),
+        (-1, "Mr. Ben Okoro — Physical Science")
+    }
+
     Private Sub BuildContent()
         If content Is Nothing Then
             content = New Panel()
@@ -277,15 +321,8 @@ Public Class AdminDashboardForm
         Dim lblTitle As New Label() With {.Text = "📋  Recent activity", .Font = New Font("Segoe UI", 11, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, 18)}
         panel.Controls.Add(lblTitle)
 
-        Dim rows As (String, String, String)() = {
-            ("Amara Okafor", "Completed 'Titration' with 94%", "2 min ago"),
-            ("Mr. Daniels (Teacher)", "Published a new experiment: 'Redox Reactions'", "18 min ago"),
-            ("Liam Chen", "Started 'Gas Evolution'", "42 min ago"),
-            ("New signup", "Priya Nair registered as a Student", "1 hr ago"),
-            ("System", "Weekly usage report generated", "3 hr ago")
-        }
         Dim rowY As Integer = 58
-        For Each r In rows
+        For Each r In activityRows
             Dim lblWho As New Label() With {.Text = r.Item1, .Font = New Font("Segoe UI", 9.5, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, rowY)}
             Dim lblWhat As New Label() With {.Text = r.Item2, .Font = New Font("Segoe UI", 8.5), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(20, rowY + 18)}
             Dim lblWhen As New Label() With {.Text = r.Item3, .Font = New Font("Segoe UI", 8.5), .ForeColor = Color.FromArgb(110, 118, 140), .AutoSize = True, .Location = New Point(w - 100, rowY + 6)}
@@ -308,22 +345,62 @@ Public Class AdminDashboardForm
         Dim lblTitle As New Label() With {.Text = "⏳  Pending teacher approvals", .Font = New Font("Segoe UI", 11, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, 18)}
         panel.Controls.Add(lblTitle)
 
-        Dim names As String() = {"Dr. Sarah Whitfield — Chemistry Dept.", "Mr. Ben Okoro — Physical Science"}
+        If pendingTeachers.Length = 0 Then
+            Dim lblNone As New Label() With {.Text = "No teacher accounts are waiting for approval.", .Font = New Font("Segoe UI", 9.5), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(20, 58)}
+            panel.Controls.Add(lblNone)
+            Return
+        End If
+
         Dim rowY As Integer = 58
-        For Each n In names
-            Dim lblName As New Label() With {.Text = n, .Font = New Font("Segoe UI", 9.5), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, rowY + 10)}
+        For Each t In pendingTeachers
+            Dim userId = t.UserId
+            Dim displayLine = t.DisplayLine
+
+            Dim lblName As New Label() With {.Text = displayLine, .Font = New Font("Segoe UI", 9.5), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, rowY + 10)}
             panel.Controls.Add(lblName)
 
             Dim btnApprove As New GradientButton() With {.Text = "Approve", .Size = New Size(96, 34), .Location = New Point(w - 220, rowY)}
-            AddHandler btnApprove.Click, Sub() MessageBox.Show($"{n} approved (demo).", "ChemLab Admin")
+            AddHandler btnApprove.Click, Async Sub() Await HandleApprovalAsync(userId, displayLine, approve:=True)
             panel.Controls.Add(btnApprove)
 
             Dim btnDeny As New DarkButton() With {.Text = "Deny", .Size = New Size(96, 34), .Location = New Point(w - 116, rowY)}
-            AddHandler btnDeny.Click, Sub() MessageBox.Show($"{n} denied (demo).", "ChemLab Admin")
+            AddHandler btnDeny.Click, Async Sub() Await HandleApprovalAsync(userId, displayLine, approve:=False)
             panel.Controls.Add(btnDeny)
 
             rowY += 54
         Next
     End Sub
+
+    ''' <summary>Approves/denies a pending teacher account and refreshes the panel.
+    ''' If this is offline fallback data (userId = -1, no real database row), just
+    ''' shows the old demo message instead of trying to update anything.</summary>
+    Private Async Function HandleApprovalAsync(userId As Integer, displayLine As String, approve As Boolean) As Task
+        If userId < 0 Then
+            MessageBox.Show($"{displayLine} {If(approve, "approved", "denied")} (demo — not connected to the database).", "ChemLab Admin")
+            Return
+        End If
+
+        Try
+            If approve Then
+                Await AdminRepository.ApproveTeacherAsync(userId, adminName)
+            Else
+                Await AdminRepository.DenyTeacherAsync(userId, adminName)
+            End If
+            MessageBox.Show($"{displayLine} {If(approve, "approved", "denied")}.", "ChemLab Admin")
+            Await LoadPendingAndRebuildAsync()
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't update this account: {ex.Message}", "ChemLab Admin", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Function
+
+    Private Async Function LoadPendingAndRebuildAsync() As Task
+        Try
+            Dim fresh = Await AdminRepository.GetPendingTeachersAsync()
+            pendingTeachers = fresh.Select(Function(p) (p.UserId, p.DisplayLine)).ToArray()
+            BuildContent()
+        Catch ex As Exception
+            Debug.WriteLine($"Could not refresh pending teachers: {ex.Message}")
+        End Try
+    End Function
 
 End Class

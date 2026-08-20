@@ -2,6 +2,7 @@ Imports System.Drawing
 Imports System.Drawing.Drawing2D
 Imports System.Linq
 Imports System.Runtime.InteropServices
+Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 ' Reports & Grades screen: sidebar + titlebar (same chrome as HomeForm/Quizzes) plus
@@ -35,6 +36,11 @@ Public Class ReportsGrades
         Public Property NoteColor As Color
     End Class
 
+    ' TODO: the four summary cards need aggregate queries across assessments/
+    ' quiz_attempts/lab_sessions plus a notion of "target syllabus size" and
+    ' "last term" that isn't modeled in the schema yet — left hard-coded for
+    ' now rather than wiring up half-correct numbers. scoreTrend, masteryTopics
+    ' and assessments below ARE wired to the database.
     Private ReadOnly stats As New List(Of StatCard) From {
         New StatCard With {.Label = "Overall average", .Value = "85.7%", .Note = "+6.2 vs last term", .NoteColor = Color.FromArgb(120, 220, 170)},
         New StatCard With {.Label = "Experiments completed", .Value = "14 / 20", .Note = "70% of syllabus", .NoteColor = Color.FromArgb(150, 158, 180)},
@@ -42,13 +48,15 @@ Public Class ReportsGrades
         New StatCard With {.Label = "Lab hours logged", .Value = "23h 40m", .Note = "Across 31 sessions", .NoteColor = Color.FromArgb(150, 158, 180)}
     }
 
-    ' month, score (0-100) — score trend line chart
-    Private ReadOnly scoreTrend As New List(Of (Month As String, Score As Integer)) From {
+    ' month, score (0-100) — score trend line chart. Offline fallback shown
+    ' immediately; LoadFromDbAsync() (fired from Form.Load) replaces it with
+    ' the real rows from `score_trend` for the signed-in user.
+    Private scoreTrend As New List(Of (Month As String, Score As Integer)) From {
         ("Mar", 70), ("Apr", 78), ("May", 75), ("Jun", 84), ("Jul", 88)
     }
 
-    ' topic, mastery % — mastery bar chart
-    Private ReadOnly masteryTopics As New List(Of (Topic As String, Percent As Integer)) From {
+    ' topic, mastery % — mastery bar chart. Same offline-fallback pattern.
+    Private masteryTopics As New List(Of (Topic As String, Percent As Integer)) From {
         ("Acids", 85), ("Solutions", 72), ("Redox", 60), ("Oxides", 78), ("Analysis", 82)
     }
 
@@ -60,13 +68,20 @@ Public Class ReportsGrades
         Public Property Status As String
     End Class
 
-    Private ReadOnly assessments As New List(Of AssessmentRow) From {
+    ' Same offline-fallback pattern as above.
+    Private assessments As New List(Of AssessmentRow) From {
         New AssessmentRow With {.Name = "Acid & Base Reaction", .Type = "Practical", .DateText = "12 Jul 2026", .Score = "92%", .Status = "Graded"},
         New AssessmentRow With {.Name = "Precipitation Reaction", .Type = "Practical", .DateText = "18 Jul 2026", .Score = "78%", .Status = "Graded"},
         New AssessmentRow With {.Name = "Titration Quiz", .Type = "Quiz", .DateText = "21 Jul 2026", .Score = "85%", .Status = "Graded"},
         New AssessmentRow With {.Name = "Gas Evolution Report", .Type = "Report", .DateText = "24 Jul 2026", .Score = "—", .Status = "Pending"},
         New AssessmentRow With {.Name = "Flame Test", .Type = "Practical", .DateText = "28 Jul 2026", .Score = "88%", .Status = "Graded"}
     }
+
+    ' Set once the signed-in user is resolved against the database (see
+    ' LoadFromDbAsync). Falls back to 1 (the seeded demo user) if that lookup
+    ' hasn't happened yet — swap in your real session/user-id management once
+    ' you have it instead of relying on this.
+    Private currentUserId As Integer = 1
 
     Public Sub New(displayName As String, role As String)
         userName = If(String.IsNullOrWhiteSpace(displayName), "Student", displayName)
@@ -92,6 +107,39 @@ Public Class ReportsGrades
                                        BuildContent()
                                    End If
                                End Sub
+
+        AddHandler Me.Load, AddressOf LoadFromDbAsync
+    End Sub
+
+    ''' <summary>
+    ''' Resolves the signed-in user by email/name, then loads their real score
+    ''' trend, topic mastery and assessment history from the database, replacing
+    ''' the offline fallback data and re-rendering. Silently keeps the fallback
+    ''' if the database isn't reachable.
+    ''' </summary>
+    Private Async Sub LoadFromDbAsync(sender As Object, e As EventArgs)
+        Try
+            Dim resolvedId = Await UsersRepository.FindUserIdByDisplayNameAsync(userName)
+            If resolvedId.HasValue Then currentUserId = resolvedId.Value
+
+            Dim trendTask = ReportsRepository.GetScoreTrendAsync(currentUserId)
+            Dim masteryTask = ReportsRepository.GetMasteryTopicsAsync(currentUserId)
+            Dim assessmentsTask = ReportsRepository.GetAssessmentsAsync(currentUserId)
+            Await Task.WhenAll(trendTask, masteryTask, assessmentsTask)
+
+            If trendTask.Result.Count > 0 Then scoreTrend = trendTask.Result
+            If masteryTask.Result.Count > 0 Then masteryTopics = masteryTask.Result
+            If assessmentsTask.Result.Count > 0 Then
+                assessments = assessmentsTask.Result.Select(
+                    Function(a) New AssessmentRow With {
+                        .Name = a.Name, .Type = a.Type, .DateText = a.DateText, .Score = a.Score, .Status = a.Status
+                    }).ToList()
+            End If
+
+            BuildContent()
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load reports from database: {ex.Message}")
+        End Try
     End Sub
 
     ' ===================== TITLE BAR =====================

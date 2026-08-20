@@ -2,6 +2,7 @@ Imports System.Drawing
 Imports System.Drawing.Drawing2D
 Imports System.Linq
 Imports System.Runtime.InteropServices
+Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 ' Quizzes screen: sidebar + titlebar (same chrome as HomeForm/ApparatusForm) plus a
@@ -27,14 +28,25 @@ Public Class Quizzes
     Private content As Panel
 
     ' ----- quiz data -----
-    Private Class QuizQuestion
+    ' Public so QuizzesRepository (in src/Data) can build and return these directly.
+    Public Class QuizQuestion
+        Public Property QuestionId As Integer         ' 0 for the offline fallback questions
         Public Property Text As String
         Public Property Options As String()
+        Public Property OptionIds As Integer()         ' parallel to Options(); 0 where not backed by the DB
         Public Property CorrectIndex As Integer
         Public Property Selected As Integer = -1
     End Class
 
-    Private ReadOnly questions As New List(Of QuizQuestion) From {
+    ' The quiz currently shown is always the single "Acids & Bases — Quiz 1"
+    ' seeded as quiz_id = 1. Extend this (and the sidebar) once there's more
+    ' than one quiz to choose from.
+    Private Const QuizId As Integer = 1
+
+    ' Offline fallback shown immediately; LoadQuizFromDbAsync() (fired from
+    ' Form.Load) replaces this with the real questions from `quiz_questions`/
+    ' `quiz_options` and re-renders once they arrive.
+    Private questions As New List(Of QuizQuestion) From {
         New QuizQuestion With {
             .Text = "1. What products are formed when HCl reacts with NaOH?",
             .Options = {"Salt and water", "Hydrogen gas only", "Carbon dioxide and water", "No reaction"},
@@ -58,8 +70,10 @@ Public Class Quizzes
         }
     }
 
-    ' subject, score % — shown in the right-hand "Your scores" panel
-    Private ReadOnly scores As New List(Of (Subject As String, Percent As Integer)) From {
+    ' subject, score % — shown in the right-hand "Your scores" panel.
+    ' Offline fallback; replaced with real per-topic mastery from the database
+    ' (reusing the same `mastery_topics` table Reports & Grades reads from).
+    Private scores As New List(Of (Subject As String, Percent As Integer)) From {
         ("Acids & Bases", 92),
         ("Reactions", 78),
         ("Solutions", 85),
@@ -67,9 +81,14 @@ Public Class Quizzes
     }
     Private scoreValueLabels As New Dictionary(Of String, Label)
 
+    ' Resolved against the database in LoadQuizFromDbAsync; falls back to 1
+    ' (the seeded demo user) until then. Swap in real session/user-id
+    ' management once you have it instead of relying on this.
+    Private currentUserId As Integer = 1
+
     Private Const QuestionsPerPage As Integer = 2
     Private currentPage As Integer = 0
-    Private ReadOnly totalPages As Integer
+    Private totalPages As Integer
 
     Private quizCard As RoundedPanel
     Private questionsHost As Panel
@@ -112,6 +131,8 @@ Public Class Quizzes
                                End Sub
         RenderPage(0)
         StartCountdown()
+
+        AddHandler Me.Load, AddressOf LoadQuizFromDbAsync
 
         AddHandler Me.FormClosed, Sub()
                                        If countdownTimer IsNot Nothing Then
@@ -564,17 +585,65 @@ Public Class Quizzes
         progressFill.Invalidate()
     End Sub
 
+    Private quizSubject As String = "Acids & Bases"
+
     Private Sub RecalculateAcidsAndBasesScore()
         Dim answered = questions.Where(Function(q) q.Selected >= 0).ToList()
         If answered.Count = 0 Then Return
         Dim correct = answered.Where(Function(q) q.Selected = q.CorrectIndex).Count()
         Dim percent = CInt(Math.Round(correct / CDbl(answered.Count) * 100))
-        UpdateScore("Acids & Bases", percent)
+        UpdateScore(quizSubject, percent)
         UpdateProgressBar()
     End Sub
 
-    Private Sub FinishQuiz()
-        MessageBox.Show("Quiz complete! Your Acids & Bases score has been updated.", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
+    ''' <summary>
+    ''' Loads the real quiz + questions from the database (falling back to the
+    ''' offline sample above if unreachable), and loads the "Your scores" panel
+    ''' from mastery_topics for the signed-in user.
+    ''' </summary>
+    Private Async Sub LoadQuizFromDbAsync(sender As Object, e As EventArgs)
+        Try
+            Dim resolvedId = Await UsersRepository.FindUserIdByDisplayNameAsync(userName)
+            If resolvedId.HasValue Then currentUserId = resolvedId.Value
+
+            Dim quizTask = QuizzesRepository.GetQuizWithQuestionsAsync(QuizId)
+            Dim scoresTask = ReportsRepository.GetMasteryTopicsAsync(currentUserId)
+            Await Task.WhenAll(quizTask, scoresTask)
+
+            If quizTask.Result.Questions.Count > 0 Then
+                quizSubject = quizTask.Result.Subject
+                questions = quizTask.Result.Questions
+                totalPages = CInt(Math.Ceiling(questions.Count / CDbl(QuestionsPerPage)))
+                currentPage = 0
+            End If
+            If scoresTask.Result.Count > 0 Then
+                scores = scoresTask.Result.Select(Function(t) (t.Topic, CInt(t.Percent))).ToList()
+            End If
+
+            BuildContent()
+            RenderPage(0)
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load quiz from database: {ex.Message}")
+        End Try
+    End Sub
+
+    Private Async Sub FinishQuiz()
+        Dim answered = questions.Where(Function(q) q.Selected >= 0).ToList()
+        Dim correct = answered.Where(Function(q) q.Selected = q.CorrectIndex).Count()
+        Dim percent = If(answered.Count = 0, 0, CInt(Math.Round(correct / CDbl(answered.Count) * 100)))
+
+        Try
+            ' Only persist if the questions actually came from the database
+            ' (QuestionId = 0 means we're still on the offline fallback set).
+            If questions.Count > 0 AndAlso questions(0).QuestionId > 0 Then
+                Await QuizzesRepository.SaveAttemptAsync(QuizId, currentUserId, percent, questions)
+                Await UsersRepository.LogActivityAsync(currentUserId, "quiz_submitted", $"Scored {percent}% on '{quizSubject}'")
+            End If
+        Catch ex As Exception
+            Debug.WriteLine($"Could not save quiz attempt: {ex.Message}")
+        End Try
+
+        MessageBox.Show($"Quiz complete! Your {quizSubject} score has been updated ({percent}%).", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Information)
     End Sub
 
     Private Function FormatTime(totalSeconds As Integer) As String

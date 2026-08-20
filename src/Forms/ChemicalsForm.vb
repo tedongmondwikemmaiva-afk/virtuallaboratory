@@ -34,8 +34,11 @@ Public Class ChemicalsForm
     ' box filters against this list instead of walking content.Controls.
     Private ReadOnly reagentRows As New List(Of RoundedPanel)
 
-    ' name, formula, concentration, hazard label, dot color, hazard badge color
-    Private ReadOnly reagents As (String, String, String, String, Color)() = {
+    ' name, formula, concentration, hazard label, dot color, hazard badge color.
+    ' This starts out as a small offline fallback so the screen paints instantly;
+    ' LoadReagentsFromDbAsync() (fired from Form.Load) replaces it with the real
+    ' rows from the `reagents` table and re-renders once they arrive.
+    Private reagents As (String, String, String, String, Color)() = {
         ("Hydrochloric Acid", "HCl", "1.0 M", "Corrosive", Color.FromArgb(230, 80, 70)),
         ("Sodium Hydroxide", "NaOH", "1.0 M", "Corrosive", Color.FromArgb(64, 200, 210)),
         ("Copper Sulphate", "CuSO" & ChrW(8324), "0.5 M", "Irritant", Color.FromArgb(70, 140, 230)),
@@ -68,6 +71,28 @@ Public Class ChemicalsForm
                                        BuildContent()
                                    End If
                                End Sub
+
+        AddHandler Me.Load, AddressOf LoadReagentsFromDbAsync
+    End Sub
+
+    ''' <summary>
+    ''' Replaces the offline fallback list with the real reagent shelf from the
+    ''' database once it loads. If the database isn't reachable (e.g. not set
+    ''' up yet), the screen just keeps showing the fallback rows instead of
+    ''' erroring out — this is deliberately non-blocking.
+    ''' </summary>
+    Private Async Sub LoadReagentsFromDbAsync(sender As Object, e As EventArgs)
+        Try
+            Dim fromDb = Await ReagentsRepository.GetAllAsync()
+            If fromDb.Count > 0 Then
+                reagents = fromDb.ToArray()
+                BuildContent()
+            End If
+        Catch ex As Exception
+            ' Non-fatal: keep the fallback reagent list on screen. Surface it quietly
+            ' in the title bar rather than an interrupting MessageBox.
+            Debug.WriteLine($"Could not load reagents from database: {ex.Message}")
+        End Try
     End Sub
 
     ' ===================== TITLE BAR =====================

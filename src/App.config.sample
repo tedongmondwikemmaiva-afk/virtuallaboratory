@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <connectionStrings>
+    <!--
+      Copy this into your project's real App.config (or add this section to
+      the one Visual Studio already generated), fill in your real values, and
+      keep real credentials out of source control.
+    -->
+    <add name="ChemLabDb"
+         connectionString="Server=localhost;Port=3306;Database=chemlab;User ID=chemlab_app;Password=REPLACE_ME;SslMode=Preferred;"
+         providerName="MySqlConnector" />
+  </connectionStrings>
+</configuration>

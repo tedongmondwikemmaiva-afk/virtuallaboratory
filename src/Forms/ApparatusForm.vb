@@ -27,8 +27,10 @@ Public Class ApparatusForm
     Private titleBar As Panel
     Private content As Panel
 
-    ' name, capacity ("—" for none), status ("On bench" / "Selected" / "Hidden" / "In shelf")
-    Private ReadOnly apparatusItems As (String, String, String)() = {
+    ' name, capacity ("—" for none), status ("On bench" / "Selected" / "Hidden" / "In shelf").
+    ' Offline fallback shown immediately; LoadApparatusFromDbAsync() (fired from
+    ' Form.Load) swaps in the real rows from the `apparatus` table once they arrive.
+    Private apparatusItems As (String, String, String)() = {
         ("Conical Flask", "250 ml", "On bench"),
         ("Beaker", "500 ml", "On bench"),
         ("Round Flask", "250 ml", "Selected"),
@@ -63,6 +65,25 @@ Public Class ApparatusForm
                                        BuildContent()
                                    End If
                                End Sub
+
+        AddHandler Me.Load, AddressOf LoadApparatusFromDbAsync
+    End Sub
+
+    ''' <summary>
+    ''' Replaces the offline fallback list with the real apparatus shelf from the
+    ''' database once it loads. Silently keeps the fallback if the database isn't
+    ''' reachable, rather than erroring out.
+    ''' </summary>
+    Private Async Sub LoadApparatusFromDbAsync(sender As Object, e As EventArgs)
+        Try
+            Dim fromDb = Await ApparatusRepository.GetAllAsync()
+            If fromDb.Count > 0 Then
+                apparatusItems = fromDb.ToArray()
+                BuildContent()
+            End If
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load apparatus from database: {ex.Message}")
+        End Try
     End Sub
 
     ' ===================== TITLE BAR =====================

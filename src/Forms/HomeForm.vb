@@ -178,7 +178,7 @@ Public Class HomeForm
         lblVirtual.Location = New Point(75, 43)
         sidebar.Controls.Add(lblVirtual)
 
-        Dim navItems As (String, String, Boolean)() = {
+        Dim navItems As New List(Of (String, String, Boolean)) From {
             ("home", "Home", True),
             ("flask", "Lab Workspace", False),
             ("book", "Experiments", False),
@@ -188,9 +188,14 @@ Public Class HomeForm
             ("question", "Quizzes", False),
             ("chart", "Reports && Grades", False),
             ("shield", "Safety Data", False),
-            ("cap", "Teacher Dashboard", False),
             ("gear", "Settings", False)
         }
+
+        ' Role-gated: only Teachers and Admins get a link into the Teacher
+        ' Dashboard. Students never see it in their sidebar at all.
+        If userRole = "Teacher" OrElse userRole = "Admin" Then
+            navItems.Insert(navItems.Count - 1, ("cap", "Teacher Dashboard", False))
+        End If
 
         Dim y As Integer = 90
         For Each item In navItems
@@ -314,6 +319,16 @@ Public Class HomeForm
                                                  End Sub
                 AddHandler item.Click, openReports
                 AddHandler lbl.Click, openReports
+            ElseIf iconKey = "book" Then
+                Dim openExperiments As EventHandler = Sub()
+                                                           Try
+                                                               NavigateToForm(New ExperimentsForm(userName, userRole))
+                                                           Catch ex As Exception
+                                                               MessageBox.Show($"Failed to open Experiments: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                                           End Try
+                                                       End Sub
+                AddHandler item.Click, openExperiments
+                AddHandler lbl.Click, openExperiments
             ElseIf iconKey = "question" Then
                 ' Open Quizzes from Home without stacking modal dialogs.
                 Dim openQuizzes As EventHandler = Sub()

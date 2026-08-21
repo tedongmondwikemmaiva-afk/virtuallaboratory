@@ -20,6 +20,7 @@ Public Class AdminDashboardForm
     Private ReadOnly adminName As String
     Private sidebar As Panel
     Private content As Panel
+    Private currentPage As String = "Overview"
 
     Public Sub New(displayName As String)
         adminName = If(String.IsNullOrWhiteSpace(displayName), "Administrator", displayName)
@@ -118,11 +119,19 @@ Public Class AdminDashboardForm
     End Sub
 
     Private Sub BuildSidebar()
-        sidebar = New Panel()
-        sidebar.Dock = DockStyle.Left
-        sidebar.Width = 244
-        sidebar.BackColor = Color.FromArgb(12, 15, 30)
-        Me.Controls.Add(sidebar)
+        If sidebar Is Nothing Then
+            sidebar = New Panel()
+            sidebar.Dock = DockStyle.Left
+            sidebar.Width = 244
+            sidebar.BackColor = Color.FromArgb(12, 15, 30)
+            Me.Controls.Add(sidebar)
+        Else
+            ' Re-entering to reflect a page change: wipe and rebuild so the
+            ' active-item highlight matches currentPage.
+            While sidebar.Controls.Count > 0
+                sidebar.Controls(0).Dispose()
+            End While
+        End If
 
         Dim iconBox As New Panel()
         iconBox.Size = New Size(44, 44)
@@ -149,13 +158,10 @@ Public Class AdminDashboardForm
         sidebar.Controls.Add(lblChem)
         sidebar.Controls.Add(lblVirtual)
 
-        Dim navItems As (String, Boolean)() = {
-            ("Overview", True), ("Students", False), ("Teachers", False), ("Experiments Library", False),
-            ("Reports", False), ("System Settings", False)
-        }
+        Dim navItems As String() = {"Overview", "Students", "Teachers", "Experiments Library", "Reports", "System Settings"}
         Dim y As Integer = 90
-        For Each item In navItems
-            CreateNavItem(item.Item1, item.Item2, y)
+        For Each label In navItems
+            CreateNavItem(label, label = currentPage, y)
             y += 46
         Next
 
@@ -216,7 +222,7 @@ Public Class AdminDashboardForm
         item.Controls.Add(lbl)
 
         If Not isActive Then
-            Dim handler As EventHandler = Sub() MessageBox.Show($"'{label}' is coming soon in a future update.", "ChemLab Admin")
+            Dim handler As EventHandler = Sub() NavigateTo(label)
             AddHandler item.Click, handler
             AddHandler lbl.Click, handler
             AddHandler item.MouseEnter, Sub()
@@ -248,6 +254,21 @@ Public Class AdminDashboardForm
         (-1, "Mr. Ben Okoro — Physical Science")
     }
 
+    Private Async Sub NavigateTo(page As String)
+        currentPage = page
+        BuildSidebar()
+        BuildContent()
+        ' Students/Teachers/Reports need real data; load it after switching so
+        ' the page paints immediately and fills in once the query returns.
+        Select Case page
+            Case "Students" : Await LoadStudentsAsync()
+            Case "Teachers" : Await LoadTeachersAsync()
+            Case "Experiments Library" : Await LoadExperimentsAsync()
+            Case "Reports" : Await LoadReportsAsync()
+            Case "System Settings" : Await LoadSettingsAsync()
+        End Select
+    End Sub
+
     Private Sub BuildContent()
         If content Is Nothing Then
             content = New Panel()
@@ -257,14 +278,25 @@ Public Class AdminDashboardForm
             Me.Controls.Add(content)
             Me.Controls.SetChildIndex(content, 0)
         Else
-            ' Re-entering BuildContent (e.g. on resize/maximize): wipe the previous
-            ' controls and rebuild them against the new content size so the layout
-            ' reflows instead of staying pinned to the window's original dimensions.
+            ' Re-entering BuildContent (e.g. on resize/maximize, or a page switch):
+            ' wipe the previous controls and rebuild against the new content size.
             While content.Controls.Count > 0
                 content.Controls(0).Dispose()
             End While
         End If
 
+        Select Case currentPage
+            Case "Overview" : BuildOverviewPage()
+            Case "Students" : BuildStudentsPage()
+            Case "Teachers" : BuildTeachersPage()
+            Case "Experiments Library" : BuildExperimentsPage()
+            Case "Reports" : BuildReportsPage()
+            Case "System Settings" : BuildSystemSettingsPage()
+            Case Else : BuildNotBuiltYetPage(currentPage)
+        End Select
+    End Sub
+
+    Private Sub BuildOverviewPage()
         Dim lblWelcome As New Label() With {.Text = $"Welcome back, {adminName}", .Font = New Font("Segoe UI", 22, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(36, 28)}
         Dim lblSub As New Label() With {.Text = "Here's what's happening across ChemLab Virtual today.", .Font = New Font("Segoe UI", 10.5), .ForeColor = Color.FromArgb(140, 148, 210), .AutoSize = True, .Location = New Point(36, 62)}
         content.Controls.Add(lblWelcome)
@@ -402,5 +434,435 @@ Public Class AdminDashboardForm
             Debug.WriteLine($"Could not refresh pending teachers: {ex.Message}")
         End Try
     End Function
+
+    ' ===================== Students page =====================
+
+    Private students As New List(Of AdminRepository.StudentDto)
+
+    Private Async Function LoadStudentsAsync() As Task
+        Try
+            students = Await AdminRepository.GetAllStudentsAsync()
+            If currentPage = "Students" Then BuildContent()
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load students: {ex.Message}")
+            If currentPage = "Students" Then ShowLoadErrorBanner("students")
+        End Try
+    End Function
+
+    Private Sub BuildStudentsPage()
+        Dim lblTitle As New Label() With {.Text = "Students", .Font = New Font("Segoe UI", 22, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(36, 28)}
+        Dim lblSub As New Label() With {.Text = $"{students.Count} registered student account(s).", .Font = New Font("Segoe UI", 10.5), .ForeColor = Color.FromArgb(140, 148, 210), .AutoSize = True, .Location = New Point(36, 62)}
+        content.Controls.Add(lblTitle)
+        content.Controls.Add(lblSub)
+
+        If students.Count = 0 Then
+            AddEmptyOrLoadingLabel("Loading students…")
+            Return
+        End If
+
+        Dim panel = BeginListPanel(36, 106, content.Width - 72, students.Count * 54 + 20)
+        Dim rowY As Integer = 16
+        For Each s In students
+            Dim lblName As New Label() With {.Text = s.DisplayName, .Font = New Font("Segoe UI", 9.5, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, rowY)}
+            Dim lblMeta As New Label() With {.Text = $"{s.Email}  ·  joined {s.JoinedText}  ·  last login {s.LastLoginText}", .Font = New Font("Segoe UI", 8.5), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(20, rowY + 18)}
+            panel.Controls.Add(lblName)
+            panel.Controls.Add(lblMeta)
+
+            Dim userId = s.UserId
+            Dim isActive = s.IsActive
+            Dim btnToggle As New DarkButton() With {.Text = If(isActive, "Deactivate", "Reactivate"), .Size = New Size(110, 32), .Location = New Point(panel.Width - 130, rowY)}
+            AddHandler btnToggle.Click, Async Sub()
+                                             Try
+                                                 Await AdminRepository.SetStudentActiveAsync(userId, Not isActive, adminName)
+                                                 Await LoadStudentsAsync()
+                                             Catch ex As Exception
+                                                 MessageBox.Show($"Couldn't update this account: {ex.Message}", "ChemLab Admin", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                             End Try
+                                         End Sub
+            panel.Controls.Add(btnToggle)
+
+            rowY += 54
+        Next
+    End Sub
+
+    ' ===================== Teachers page =====================
+
+    Private teachers As New List(Of AdminRepository.TeacherDto)
+
+    Private Async Function LoadTeachersAsync() As Task
+        Try
+            teachers = Await AdminRepository.GetAllTeachersAsync()
+            If currentPage = "Teachers" Then BuildContent()
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load teachers: {ex.Message}")
+            If currentPage = "Teachers" Then ShowLoadErrorBanner("teachers")
+        End Try
+    End Function
+
+    Private Sub BuildTeachersPage()
+        Dim lblTitle As New Label() With {.Text = "Teachers", .Font = New Font("Segoe UI", 22, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(36, 28)}
+        Dim lblSub As New Label() With {.Text = $"{teachers.Count} teacher account(s) — approve, deny, or revoke access here.", .Font = New Font("Segoe UI", 10.5), .ForeColor = Color.FromArgb(140, 148, 210), .AutoSize = True, .Location = New Point(36, 62)}
+        content.Controls.Add(lblTitle)
+        content.Controls.Add(lblSub)
+
+        If teachers.Count = 0 Then
+            AddEmptyOrLoadingLabel("Loading teachers…")
+            Return
+        End If
+
+        Dim panel = BeginListPanel(36, 106, content.Width - 72, teachers.Count * 54 + 20)
+        Dim rowY As Integer = 16
+        For Each t In teachers
+            Dim lblName As New Label() With {.Text = t.DisplayName, .Font = New Font("Segoe UI", 9.5, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, rowY)}
+            Dim lblMeta As New Label() With {.Text = $"{t.Email}  ·  joined {t.JoinedText}", .Font = New Font("Segoe UI", 8.5), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(20, rowY + 18)}
+            panel.Controls.Add(lblName)
+            panel.Controls.Add(lblMeta)
+
+            Dim statusColor = If(t.ApprovalStatus = "Approved", Color.FromArgb(120, 220, 170),
+                              If(t.ApprovalStatus = "Pending", Color.FromArgb(230, 170, 100), Color.FromArgb(220, 100, 100)))
+            Dim lblStatus As New Label() With {.Text = t.ApprovalStatus, .Font = New Font("Segoe UI", 8.5, FontStyle.Bold), .ForeColor = statusColor, .AutoSize = True, .Location = New Point(panel.Width - 330, rowY + 8)}
+            panel.Controls.Add(lblStatus)
+
+            Dim userId = t.UserId
+            Dim displayName = t.DisplayName
+            If t.ApprovalStatus = "Pending" Then
+                Dim btnApprove As New GradientButton() With {.Text = "Approve", .Size = New Size(90, 32), .Location = New Point(panel.Width - 216, rowY)}
+                AddHandler btnApprove.Click, Async Sub() Await HandleTeacherActionAsync(userId, displayName, approve:=True)
+                panel.Controls.Add(btnApprove)
+
+                Dim btnDeny As New DarkButton() With {.Text = "Deny", .Size = New Size(90, 32), .Location = New Point(panel.Width - 116, rowY)}
+                AddHandler btnDeny.Click, Async Sub() Await HandleTeacherActionAsync(userId, displayName, approve:=False)
+                panel.Controls.Add(btnDeny)
+            Else
+                Dim btnRevoke As New DarkButton() With {.Text = If(t.ApprovalStatus = "Approved", "Revoke", "Reconsider"), .Size = New Size(120, 32), .Location = New Point(panel.Width - 140, rowY)}
+                Dim approveNow = (t.ApprovalStatus <> "Approved")
+                AddHandler btnRevoke.Click, Async Sub() Await HandleTeacherActionAsync(userId, displayName, approve:=approveNow)
+                panel.Controls.Add(btnRevoke)
+            End If
+
+            rowY += 54
+        Next
+    End Sub
+
+    Private Async Function HandleTeacherActionAsync(userId As Integer, displayName As String, approve As Boolean) As Task
+        Try
+            If approve Then
+                Await AdminRepository.ApproveTeacherAsync(userId, adminName)
+            Else
+                Await AdminRepository.DenyTeacherAsync(userId, adminName)
+            End If
+            Await LoadTeachersAsync()
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't update {displayName}: {ex.Message}", "ChemLab Admin", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Function
+
+    ' ===================== Reports page =====================
+
+    Private platformStats As AdminRepository.PlatformStatsDto
+    Private topStudents As New List(Of AdminRepository.TopStudentDto)
+
+    Private Async Function LoadReportsAsync() As Task
+        Try
+            Dim statsTask = AdminRepository.GetPlatformStatsAsync()
+            Dim topTask = AdminRepository.GetTopStudentsAsync(5)
+            Await Task.WhenAll(statsTask, topTask)
+            platformStats = statsTask.Result
+            topStudents = topTask.Result
+            If currentPage = "Reports" Then BuildContent()
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load reports: {ex.Message}")
+            If currentPage = "Reports" Then ShowLoadErrorBanner("platform reports")
+        End Try
+    End Function
+
+    Private Sub BuildReportsPage()
+        Dim lblTitle As New Label() With {.Text = "Reports", .Font = New Font("Segoe UI", 22, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(36, 28)}
+        Dim lblSub As New Label() With {.Text = "Platform-wide activity, pulled live from the database.", .Font = New Font("Segoe UI", 10.5), .ForeColor = Color.FromArgb(140, 148, 210), .AutoSize = True, .Location = New Point(36, 62)}
+        content.Controls.Add(lblTitle)
+        content.Controls.Add(lblSub)
+
+        If platformStats Is Nothing Then
+            AddEmptyOrLoadingLabel("Loading reports…")
+            Return
+        End If
+
+        Dim stats As (String, String, Color, Color)() = {
+            (platformStats.TotalStudents.ToString(), "Total students", Color.FromArgb(108, 92, 231), Color.FromArgb(214, 82, 205)),
+            (platformStats.TotalTeachers.ToString(), "Approved teachers", Color.FromArgb(92, 130, 231), Color.FromArgb(120, 200, 231)),
+            (platformStats.TotalQuizAttempts.ToString(), "Quiz attempts submitted", Color.FromArgb(150, 92, 231), Color.FromArgb(214, 82, 170)),
+            ($"{Math.Round(platformStats.AverageQuizScore, 1)}%", "Average quiz score", Color.FromArgb(92, 150, 231), Color.FromArgb(180, 92, 231))
+        }
+        Dim statGap As Integer = 20
+        Dim statWidth As Integer = (content.Width - 72 - statGap * 3) \ 4
+        For i As Integer = 0 To stats.Length - 1
+            CreateStatCard(stats(i).Item1, stats(i).Item2, stats(i).Item3, stats(i).Item4, 36 + i * (statWidth + statGap), 106, statWidth)
+        Next
+
+        Dim lblExtra As New Label() With {
+            .Text = $"{platformStats.PendingTeachers} teacher account(s) awaiting approval  ·  {platformStats.TotalAssessments} graded assessment(s), averaging {Math.Round(platformStats.AverageAssessmentScore, 1)}%",
+            .Font = New Font("Segoe UI", 9.5), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(36, 210)}
+        content.Controls.Add(lblExtra)
+
+        Dim panelH = Math.Max(80, topStudents.Count * 44 + 60)
+        Dim panel = BeginListPanel(36, 246, content.Width - 72, panelH)
+        Dim lblPanelTitle As New Label() With {.Text = "Top students by average score", .Font = New Font("Segoe UI", 11, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, 16)}
+        panel.Controls.Add(lblPanelTitle)
+
+        If topStudents.Count = 0 Then
+            Dim lblNone As New Label() With {.Text = "No graded assessments yet.", .Font = New Font("Segoe UI", 9.5), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(20, 54)}
+            panel.Controls.Add(lblNone)
+        Else
+            Dim rowY As Integer = 54
+            For Each t In topStudents
+                Dim lblName As New Label() With {.Text = t.DisplayName, .Font = New Font("Segoe UI", 9.5), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, rowY)}
+                Dim lblScore As New Label() With {.Text = $"{Math.Round(t.AverageScore, 1)}% avg over {t.AssessmentCount} assessment(s)", .Font = New Font("Segoe UI", 8.5), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(panel.Width - 260, rowY + 1)}
+                panel.Controls.Add(lblName)
+                panel.Controls.Add(lblScore)
+                rowY += 36
+            Next
+        End If
+    End Sub
+
+    ' ===================== Experiments Library page =====================
+
+    Private experiments As New List(Of ExperimentsRepository.ExperimentDto)
+
+    Private Async Function LoadExperimentsAsync() As Task
+        Try
+            experiments = Await ExperimentsRepository.GetAllAsync()
+            If currentPage = "Experiments Library" Then BuildContent()
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load experiments: {ex.Message}")
+            If currentPage = "Experiments Library" Then ShowLoadErrorBanner("the experiments library")
+        End Try
+    End Function
+
+    Private Sub BuildExperimentsPage()
+        Dim lblTitle As New Label() With {.Text = "Experiments Library", .Font = New Font("Segoe UI", 22, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(36, 28)}
+        Dim lblSub As New Label() With {.Text = $"{experiments.Count} experiment(s) — draft, publish, archive, or remove.", .Font = New Font("Segoe UI", 10.5), .ForeColor = Color.FromArgb(140, 148, 210), .AutoSize = True, .Location = New Point(36, 62)}
+        content.Controls.Add(lblTitle)
+        content.Controls.Add(lblSub)
+
+        Dim btnAdd As New GradientButton() With {.Text = "+ Add experiment", .Size = New Size(160, 36), .Location = New Point(content.Width - 196, 30), .Anchor = AnchorStyles.Top Or AnchorStyles.Right}
+        AddHandler btnAdd.Click, AddressOf HandleAddExperimentAsync
+        content.Controls.Add(btnAdd)
+
+        If experiments.Count = 0 Then
+            AddEmptyOrLoadingLabel("Loading experiments… (or none exist yet — click ""+ Add experiment"" to create the first one)")
+            Return
+        End If
+
+        Dim panel = BeginListPanel(36, 106, content.Width - 72, experiments.Count * 68 + 20)
+        Dim rowY As Integer = 16
+        For Each exp In experiments
+            Dim statusColor = If(exp.Status = "Published", Color.FromArgb(120, 220, 170),
+                              If(exp.Status = "Draft", Color.FromArgb(230, 170, 100), Color.FromArgb(150, 158, 180)))
+
+            Dim lblTitleRow As New Label() With {.Text = exp.Title, .Font = New Font("Segoe UI", 9.5, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, rowY)}
+            Dim lblMeta As New Label() With {
+                .Text = $"{exp.Category}  ·  {exp.Difficulty}  ·  ~{exp.EstDurationMinutes} min  ·  by {exp.AuthorName}  ·  {exp.CompletionCount} completed",
+                .Font = New Font("Segoe UI", 8.5), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(20, rowY + 18)}
+            Dim lblStatus As New Label() With {.Text = exp.Status, .Font = New Font("Segoe UI", 8.5, FontStyle.Bold), .ForeColor = statusColor, .AutoSize = True, .Location = New Point(20, rowY + 38)}
+            panel.Controls.Add(lblTitleRow)
+            panel.Controls.Add(lblMeta)
+            panel.Controls.Add(lblStatus)
+
+            Dim expId = exp.ExperimentId
+            Dim title = exp.Title
+            Dim status = exp.Status
+
+            Dim btnX As Integer = panel.Width - 300
+            If status <> "Published" Then
+                Dim btnPublish As New GradientButton() With {.Text = "Publish", .Size = New Size(90, 32), .Location = New Point(btnX, rowY + 12)}
+                AddHandler btnPublish.Click, Async Sub() Await HandleExperimentStatusAsync(expId, "Published", title)
+                panel.Controls.Add(btnPublish)
+                btnX += 98
+            End If
+            If status <> "Archived" Then
+                Dim btnArchive As New DarkButton() With {.Text = "Archive", .Size = New Size(90, 32), .Location = New Point(btnX, rowY + 12)}
+                AddHandler btnArchive.Click, Async Sub() Await HandleExperimentStatusAsync(expId, "Archived", title)
+                panel.Controls.Add(btnArchive)
+                btnX += 98
+            End If
+            Dim btnDelete As New DarkButton() With {.Text = "Delete", .FillColor = Color.FromArgb(60, 24, 28), .BorderColor = Color.FromArgb(120, 40, 46), .Size = New Size(90, 32), .Location = New Point(btnX, rowY + 12)}
+            AddHandler btnDelete.Click, Async Sub() Await HandleExperimentDeleteAsync(expId, title)
+            panel.Controls.Add(btnDelete)
+
+            rowY += 68
+        Next
+    End Sub
+
+    Private Async Sub HandleAddExperimentAsync(sender As Object, e As EventArgs)
+        Dim title = Microsoft.VisualBasic.Interaction.InputBox("Experiment title:", "Add experiment", "")
+        If String.IsNullOrWhiteSpace(title) Then Return
+
+        Dim description = Microsoft.VisualBasic.Interaction.InputBox("Short description:", "Add experiment", "")
+        If String.IsNullOrWhiteSpace(description) Then description = "(No description provided.)"
+
+        Dim category = Microsoft.VisualBasic.Interaction.InputBox("Category (e.g. ""Acids & Bases"", ""Redox""):", "Add experiment", "General")
+        If String.IsNullOrWhiteSpace(category) Then category = "General"
+
+        Dim difficulty = Microsoft.VisualBasic.Interaction.InputBox("Difficulty — type Beginner, Intermediate, or Advanced:", "Add experiment", "Beginner")
+        If Not {"Beginner", "Intermediate", "Advanced"}.Contains(difficulty.Trim()) Then difficulty = "Beginner"
+
+        Dim durationText = Microsoft.VisualBasic.Interaction.InputBox("Estimated duration in minutes:", "Add experiment", "30")
+        Dim duration As Integer
+        If Not Integer.TryParse(durationText, duration) OrElse duration <= 0 Then duration = 30
+
+        Try
+            Dim authorId = Await UsersRepository.FindUserIdByDisplayNameAsync(adminName)
+            Await ExperimentsRepository.CreateAsync(title.Trim(), description.Trim(), category.Trim(), difficulty.Trim(), duration, authorId)
+            Await LoadExperimentsAsync()
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't create this experiment: {ex.Message}", "ChemLab Admin", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Sub
+
+    Private Async Function HandleExperimentStatusAsync(experimentId As Integer, newStatus As String, title As String) As Task
+        Try
+            Await ExperimentsRepository.SetStatusAsync(experimentId, newStatus, adminName)
+            Await LoadExperimentsAsync()
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't update '{title}': {ex.Message}", "ChemLab Admin", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Function
+
+    Private Async Function HandleExperimentDeleteAsync(experimentId As Integer, title As String) As Task
+        Dim confirm = MessageBox.Show($"Delete '{title}' permanently? This can't be undone.", "Delete experiment", MessageBoxButtons.YesNo, MessageBoxIcon.Warning)
+        If confirm <> DialogResult.Yes Then Return
+        Try
+            Await ExperimentsRepository.DeleteAsync(experimentId, adminName)
+            Await LoadExperimentsAsync()
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't delete '{title}': {ex.Message}", "ChemLab Admin", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Function
+
+    ' ===================== System Settings page =====================
+
+    Private settings As New Dictionary(Of String, String)
+
+    Private Async Function LoadSettingsAsync() As Task
+        Try
+            settings = Await SettingsRepository.GetAllAsync()
+            If currentPage = "System Settings" Then BuildContent()
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load settings: {ex.Message}")
+            If currentPage = "System Settings" Then ShowLoadErrorBanner("system settings")
+        End Try
+    End Function
+
+    Private Sub BuildSystemSettingsPage()
+        Dim lblTitle As New Label() With {.Text = "System Settings", .Font = New Font("Segoe UI", 22, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(36, 28)}
+        Dim lblSub As New Label() With {.Text = "These control real application behavior — changes apply immediately.", .Font = New Font("Segoe UI", 10.5), .ForeColor = Color.FromArgb(140, 148, 210), .AutoSize = True, .Location = New Point(36, 62)}
+        content.Controls.Add(lblTitle)
+        content.Controls.Add(lblSub)
+
+        If settings.Count = 0 Then
+            AddEmptyOrLoadingLabel("Loading settings…")
+            Return
+        End If
+
+        Dim panel = BeginListPanel(36, 106, Math.Min(680, content.Width - 72), 320)
+
+        Dim siteName = If(settings.ContainsKey("site_name"), settings("site_name"), "ChemLab Virtual")
+        Dim lblSiteLabel As New Label() With {.Text = "Site name", .Font = New Font("Segoe UI", 9.5, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, 20)}
+        Dim lblSiteValue As New Label() With {.Text = siteName, .Font = New Font("Segoe UI", 9), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(20, 40), .Cursor = Cursors.Hand}
+        AddHandler lblSiteValue.Click, AddressOf HandleEditSiteNameAsync
+        panel.Controls.Add(lblSiteLabel)
+        panel.Controls.Add(lblSiteValue)
+        Dim btnEditSite As New DarkButton() With {.Text = "Edit", .Size = New Size(80, 30), .Location = New Point(panel.Width - 100, 20)}
+        AddHandler btnEditSite.Click, AddressOf HandleEditSiteNameAsync
+        panel.Controls.Add(btnEditSite)
+
+        AddSettingToggleRow(panel, 90, "allow_new_signups", "Allow new signups",
+                             "When off, Create Account is blocked for everyone (Students and Teachers).")
+        AddSettingToggleRow(panel, 160, "require_teacher_approval", "Require Teacher approval",
+                             "When off, new Teacher signups are approved instantly instead of needing your review.")
+        AddSettingToggleRow(panel, 230, "maintenance_mode", "Maintenance mode",
+                             "When on, only Admin accounts can sign in — everyone else sees a maintenance message.")
+    End Sub
+
+    Private Sub AddSettingToggleRow(panel As RoundedPanel, rowY As Integer, key As String, label As String, description As String)
+        Dim isOn = settings.ContainsKey(key) AndAlso settings(key).Trim().ToLowerInvariant() = "true"
+
+        Dim lblLabel As New Label() With {.Text = label, .Font = New Font("Segoe UI", 9.5, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(20, rowY)}
+        Dim lblDesc As New Label() With {.Text = description, .Font = New Font("Segoe UI", 8.5), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = False, .Size = New Size(panel.Width - 160, 34), .Location = New Point(20, rowY + 18)}
+        panel.Controls.Add(lblLabel)
+        panel.Controls.Add(lblDesc)
+
+        Dim btnToggle As New GradientButton() With {.Text = If(isOn, "ON", "OFF"), .Size = New Size(80, 34), .Location = New Point(panel.Width - 100, rowY)}
+        If Not isOn Then
+            btnToggle.ColorStart = Color.FromArgb(50, 55, 80)
+            btnToggle.ColorEnd = Color.FromArgb(40, 44, 66)
+        End If
+        AddHandler btnToggle.Click, Async Sub() Await HandleToggleSettingAsync(key, Not isOn)
+        panel.Controls.Add(btnToggle)
+    End Sub
+
+    Private Async Function HandleToggleSettingAsync(key As String, newValue As Boolean) As Task
+        Try
+            Await SettingsRepository.SetAsync(key, newValue.ToString().ToLowerInvariant(), adminName)
+            Await LoadSettingsAsync()
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't update this setting: {ex.Message}", "ChemLab Admin", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Function
+
+    Private Async Sub HandleEditSiteNameAsync(sender As Object, e As EventArgs)
+        Dim current = If(settings.ContainsKey("site_name"), settings("site_name"), "ChemLab Virtual")
+        Dim input = Microsoft.VisualBasic.Interaction.InputBox("Site name:", "Edit setting", current)
+        If String.IsNullOrWhiteSpace(input) Then Return
+        Try
+            Await SettingsRepository.SetAsync("site_name", input.Trim(), adminName)
+            Await LoadSettingsAsync()
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't update this setting: {ex.Message}", "ChemLab Admin", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Sub
+
+    ' ===================== Pages without a data model yet =====================
+
+    ''' <summary>
+    ''' Defensive fallback only — every real nav item (Overview/Students/
+    ''' Teachers/Experiments Library/Reports/System Settings) has its own
+    ''' builder above. This only fires if currentPage somehow ends up as
+    ''' something unexpected.
+    ''' </summary>
+    Private Sub BuildNotBuiltYetPage(pageName As String)
+        Dim lblTitle As New Label() With {.Text = pageName, .Font = New Font("Segoe UI", 22, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = True, .Location = New Point(36, 28)}
+        content.Controls.Add(lblTitle)
+
+        Dim panel = BeginListPanel(36, 90, Math.Min(560, content.Width - 72), 120)
+        Dim lbl As New Label() With {
+            .Text = $"'{pageName}' isn't a recognized page.",
+            .Font = New Font("Segoe UI", 9.5), .ForeColor = Color.FromArgb(160, 168, 190), .AutoSize = False,
+            .Size = New Size(panel.Width - 40, 90), .Location = New Point(20, 16)}
+        panel.Controls.Add(lbl)
+    End Sub
+
+    ' ===================== Shared list-page helpers =====================
+
+    Private Function BeginListPanel(x As Integer, y As Integer, w As Integer, h As Integer) As RoundedPanel
+        Dim panel As New RoundedPanel()
+        panel.CornerRadius = 14
+        panel.FillColor = Color.FromArgb(16, 20, 40)
+        panel.BorderColor = Color.FromArgb(36, 41, 66)
+        panel.Location = New Point(x, y)
+        panel.Size = New Size(w, h)
+        content.Controls.Add(panel)
+        Return panel
+    End Function
+
+    Private Sub AddEmptyOrLoadingLabel(text As String)
+        Dim lbl As New Label() With {.Text = text, .Font = New Font("Segoe UI", 10), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(36, 106)}
+        content.Controls.Add(lbl)
+    End Sub
+
+    Private Sub ShowLoadErrorBanner(what As String)
+        Dim lbl As New Label() With {.Text = $"Couldn't load {what} from the database. Check your connection and try again.", .Font = New Font("Segoe UI", 9.5), .ForeColor = Color.FromArgb(220, 140, 140), .AutoSize = True, .Location = New Point(36, 106)}
+        content.Controls.Add(lbl)
+    End Sub
 
 End Class

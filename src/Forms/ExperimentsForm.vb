@@ -1,14 +1,16 @@
 Imports System.Drawing
 Imports System.Drawing.Drawing2D
+Imports System.Linq
 Imports System.Runtime.InteropServices
+Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 ''' <summary>
-''' "Apparatus" screen: grid of 3D lab-equipment items the student can drag onto
-''' the bench or toggle visibility for. Mirrors the sidebar/title-bar chrome used
-''' by HomeForm so the two screens feel like the same app.
+''' "Experiments" screen: browse published experiments from the Experiments
+''' Library, start them, and mark them complete. Mirrors the sidebar/title-bar
+''' chrome used by the other screens so it feels like the same app.
 ''' </summary>
-Public Class ApparatusForm
+Public Class ExperimentsForm
     Inherits Form
 
     <DllImport("user32.dll")>
@@ -22,24 +24,29 @@ Public Class ApparatusForm
 
     Private ReadOnly userName As String
     Private ReadOnly userRole As String
+    Private currentUserId As Integer?
 
     Private sidebar As Panel
     Private titleBar As Panel
     Private content As Panel
 
-    ' name, capacity ("—" for none), status ("On bench" / "Selected" / "Hidden" / "In shelf").
-    ' Offline fallback shown immediately; LoadApparatusFromDbAsync() (fired from
-    ' Form.Load) swaps in the real rows from the `apparatus` table once they arrive.
-    Private apparatusItems As (String, String, String)() = {
-        ("Conical Flask", "250 ml", "On bench"),
-        ("Beaker", "500 ml", "On bench"),
-        ("Round Flask", "250 ml", "Selected"),
-        ("Bunsen Burner", "—", "On bench"),
-        ("Molecular Model", "—", "Hidden"),
-        ("Clamp Stand", "—", "On bench"),
-        ("Burette", "50 ml", "In shelf"),
-        ("Test Tube Rack", "6 tubes", "In shelf")
+    ' Offline fallback shown immediately; LoadFromDbAsync() (fired from Form.Load)
+    ' replaces this with the real published experiments once they arrive.
+    Private experiments As New List(Of ExperimentsRepository.ExperimentDto) From {
+        New ExperimentsRepository.ExperimentDto With {
+            .ExperimentId = 0, .Title = "Acid-Base Titration",
+            .Description = "Determine the concentration of an unknown HCl solution by titrating against standardized NaOH.",
+            .Category = "Acids & Bases", .Difficulty = "Beginner", .EstDurationMinutes = 40,
+            .Status = "Published", .AuthorName = "Your teacher", .CreatedText = "", .CompletionCount = 0
+        },
+        New ExperimentsRepository.ExperimentDto With {
+            .ExperimentId = 0, .Title = "Precipitation Reactions",
+            .Description = "React silver nitrate with sodium chloride and observe the formation of an insoluble precipitate.",
+            .Category = "Reactions", .Difficulty = "Beginner", .EstDurationMinutes = 25,
+            .Status = "Published", .AuthorName = "Your teacher", .CreatedText = "", .CompletionCount = 0
+        }
     }
+    Private progress As New Dictionary(Of Integer, Boolean) ' experiment_id -> is complete
 
     Public Sub New(Optional displayName As String = "Mac Falen", Optional role As String = "Student")
         userName = If(String.IsNullOrWhiteSpace(displayName), "Student", displayName)
@@ -51,38 +58,40 @@ Public Class ApparatusForm
         Me.DoubleBuffered = True
         Me.AutoScroll = True
         Me.BackColor = Color.FromArgb(9, 12, 24)
-        Me.Text = "ChemLab Virtual — Apparatus"
+        Me.Text = "ChemLab Virtual — Experiments"
 
         BuildTitleBar()
         BuildSidebar()
         BuildContent()
 
-        ' Reflow the dashboard content when the window is maximized/restored so
-        ' cards and panels use the available width instead of staying stuck at
-        ' the size they were first built at.
         AddHandler Me.Resize, Sub()
                                    If Me.WindowState <> FormWindowState.Minimized Then
                                        BuildContent()
                                    End If
                                End Sub
 
-        AddHandler Me.Load, AddressOf LoadApparatusFromDbAsync
+        AddHandler Me.Load, Sub(s, e) LoadFromDbAsync()
     End Sub
 
     ''' <summary>
-    ''' Replaces the offline fallback list with the real apparatus shelf from the
-    ''' database once it loads. Silently keeps the fallback if the database isn't
-    ''' reachable, rather than erroring out.
+    ''' Replaces the offline fallback list with the real Published experiments
+    ''' from the database, plus this student's start/completion progress.
+    ''' Silently keeps the fallback if the database isn't reachable.
     ''' </summary>
-    Private Async Sub LoadApparatusFromDbAsync(sender As Object, e As EventArgs)
+    Private Async Sub LoadFromDbAsync()
         Try
-            Dim fromDb = Await ApparatusRepository.GetAllAsync()
-            If fromDb.Count > 0 Then
-                apparatusItems = fromDb.ToArray()
-                BuildContent()
+            currentUserId = Await UsersRepository.FindUserIdByDisplayNameAsync(userName)
+
+            Dim fromDb = Await ExperimentsRepository.GetPublishedAsync()
+            If fromDb.Count > 0 Then experiments = fromDb
+
+            If currentUserId.HasValue Then
+                progress = Await ExperimentsRepository.GetProgressForUserAsync(currentUserId.Value)
             End If
+
+            BuildContent()
         Catch ex As Exception
-            Debug.WriteLine($"Could not load apparatus from database: {ex.Message}")
+            Debug.WriteLine($"Could not load experiments from database: {ex.Message}")
         End Try
     End Sub
 
@@ -96,7 +105,7 @@ Public Class ApparatusForm
         Me.Controls.Add(titleBar)
 
         Dim lblTitle As New Label()
-        lblTitle.Text = "ChemLab Virtual — Apparatus"
+        lblTitle.Text = "ChemLab Virtual — Experiments"
         lblTitle.Font = New Font("Segoe UI", 9.5, FontStyle.Regular)
         lblTitle.ForeColor = Color.FromArgb(150, 158, 185)
         lblTitle.AutoSize = True
@@ -187,8 +196,8 @@ Public Class ApparatusForm
         Dim navItems As New List(Of (String, String, Boolean)) From {
             ("home", "Home", False),
             ("flask", "Lab Workspace", False),
-            ("book", "Experiments", False),
-            ("grid", "Apparatus", True),
+            ("book", "Experiments", True),
+            ("grid", "Apparatus", False),
             ("beaker", "Chemicals", False),
             ("notebook", "Lab Notebook", False),
             ("question", "Quizzes", False),
@@ -297,13 +306,21 @@ Public Class ApparatusForm
         item.Controls.Add(lbl)
 
         If isActive Then
-            ' Already on the Apparatus screen — nothing to do.
+            ' Already on the Experiments screen — nothing to do.
         ElseIf iconKey = "home" Then
-            ' This screen was opened (directly or indirectly) from Home, so closing it
-            ' returns to whichever screen is underneath instead of stacking a new one.
             Dim goHome As EventHandler = Sub() Me.Close()
             AddHandler item.Click, goHome
             AddHandler lbl.Click, goHome
+        ElseIf iconKey = "grid" Then
+            Dim openApp As EventHandler = Sub()
+                                              Try
+                                                  NavigateToForm(New ApparatusForm(userName, userRole))
+                                              Catch ex As Exception
+                                                  MessageBox.Show($"Failed to open Apparatus: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                              End Try
+                                          End Sub
+            AddHandler item.Click, openApp
+            AddHandler lbl.Click, openApp
         ElseIf iconKey = "beaker" Then
             Dim openChem As EventHandler = Sub()
                                                Try
@@ -334,16 +351,6 @@ Public Class ApparatusForm
                                              End Sub
             AddHandler item.Click, openReports
             AddHandler lbl.Click, openReports
-        ElseIf iconKey = "book" Then
-            Dim openExperiments As EventHandler = Sub()
-                                                       Try
-                                                           NavigateToForm(New ExperimentsForm(userName, userRole))
-                                                       Catch ex As Exception
-                                                           MessageBox.Show($"Failed to open Experiments: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                                                       End Try
-                                                   End Sub
-            AddHandler item.Click, openExperiments
-            AddHandler lbl.Click, openExperiments
         ElseIf iconKey = "question" Then
             Dim openQuizzes As EventHandler = Sub()
                                                    Try
@@ -374,18 +381,7 @@ Public Class ApparatusForm
         sidebar.Controls.Add(item)
     End Sub
 
-    Private Function GetInitials(fullName As String) As String
-        ' Guard against empty/blank names and stray double spaces, which would otherwise
-        ' throw when taking Substring(0, 1) of an empty split segment.
-        If String.IsNullOrWhiteSpace(fullName) Then Return "?"
-        Dim parts = fullName.Split(New Char() {" "c}, StringSplitOptions.RemoveEmptyEntries)
-        If parts.Length >= 2 Then Return (parts(0).Substring(0, 1) & parts(1).Substring(0, 1)).ToUpper()
-        If parts.Length = 1 AndAlso parts(0).Length >= 2 Then Return parts(0).Substring(0, 2).ToUpper()
-        If parts.Length = 1 Then Return parts(0).ToUpper()
-        Return "?"
-    End Function
-
-    ' ===================== MAIN CONTENT =====================
+    ' ===================== CONTENT =====================
 
     Private Sub BuildContent()
         If content Is Nothing Then
@@ -396,16 +392,13 @@ Public Class ApparatusForm
             Me.Controls.Add(content)
             Me.Controls.SetChildIndex(content, 0)
         Else
-            ' Re-entering BuildContent (e.g. on resize/maximize): wipe the previous
-            ' controls and rebuild them against the new content size so the layout
-            ' reflows instead of staying pinned to the window's original dimensions.
             While content.Controls.Count > 0
                 content.Controls(0).Dispose()
             End While
         End If
 
         Dim lblTitle As New Label()
-        lblTitle.Text = "Apparatus"
+        lblTitle.Text = "Experiments"
         lblTitle.Font = New Font("Segoe UI", 22, FontStyle.Bold)
         lblTitle.ForeColor = Color.White
         lblTitle.AutoSize = True
@@ -413,158 +406,100 @@ Public Class ApparatusForm
         content.Controls.Add(lblTitle)
 
         Dim lblSub As New Label()
-        lblSub.Text = "Drag any 3D item onto the bench, or toggle its visibility in the scene."
+        lblSub.Text = $"{experiments.Count} experiment(s) published by your teacher."
         lblSub.Font = New Font("Segoe UI", 10.5)
         lblSub.ForeColor = Color.FromArgb(140, 148, 210)
         lblSub.AutoSize = True
         lblSub.Location = New Point(36, 62)
         content.Controls.Add(lblSub)
 
-        Dim btnAdd As New GradientButton()
-        btnAdd.Text = "+  Add to Bench"
-        btnAdd.Size = New Size(160, 40)
-        btnAdd.Anchor = AnchorStyles.Top Or AnchorStyles.Right
-        btnAdd.Location = New Point(content.Width - 160 - 36, 30)
-        AddHandler btnAdd.Click, Sub() MessageBox.Show("Choose an item below, then use 'Add to Bench' to place it on the workbench.", "ChemLab Virtual")
-        content.Controls.Add(btnAdd)
+        If experiments.Count = 0 Then
+            Dim lblNone As New Label()
+            lblNone.Text = "No experiments have been published yet — check back soon."
+            lblNone.Font = New Font("Segoe UI", 10)
+            lblNone.ForeColor = Color.FromArgb(150, 158, 180)
+            lblNone.AutoSize = True
+            lblNone.Location = New Point(36, 106)
+            content.Controls.Add(lblNone)
+            Return
+        End If
 
-        BuildCardsGrid()
-        BuildInfoBanner()
-    End Sub
-
-    Private Sub BuildCardsGrid()
-        Const cols As Integer = 4
-        Const gap As Integer = 20
-        Const cardH As Integer = 178
-        Dim gridLeft As Integer = 36
-        Dim gridTop As Integer = 108
         Dim gridWidth As Integer = Me.ClientSize.Width - sidebar.Width - 72
-        Dim cardW As Integer = (gridWidth - gap * (cols - 1)) \ cols
+        Dim cardW As Integer = 340
+        Dim cardH As Integer = 190
+        Dim gap As Integer = 20
+        Dim perRow As Integer = Math.Max(1, (gridWidth + gap) \ (cardW + gap))
 
-        For i As Integer = 0 To apparatusItems.Length - 1
-            Dim col As Integer = i Mod cols
-            Dim row As Integer = i \ cols
-            Dim x As Integer = gridLeft + col * (cardW + gap)
-            Dim y As Integer = gridTop + row * (cardH + gap)
-            CreateApparatusCard(apparatusItems(i).Item1, apparatusItems(i).Item2, apparatusItems(i).Item3, x, y, cardW, cardH)
+        Dim i As Integer = 0
+        For Each exp In experiments
+            Dim col = i Mod perRow
+            Dim row = i \ perRow
+            Dim cx = 36 + col * (cardW + gap)
+            Dim cy = 106 + row * (cardH + gap)
+            BuildExperimentCard(exp, cx, cy, cardW, cardH)
+            i += 1
         Next
     End Sub
 
-    Private Sub CreateApparatusCard(name As String, capacity As String, status As String, x As Integer, y As Integer, w As Integer, h As Integer)
-        Dim isSelected As Boolean = (status = "Selected")
-
+    Private Sub BuildExperimentCard(exp As ExperimentsRepository.ExperimentDto, x As Integer, y As Integer, w As Integer, h As Integer)
         Dim card As New RoundedPanel()
         card.CornerRadius = 14
         card.FillColor = Color.FromArgb(16, 20, 40)
-        card.BorderColor = If(isSelected, Color.FromArgb(108, 92, 231), Color.FromArgb(36, 41, 66))
+        card.BorderColor = Color.FromArgb(36, 41, 66)
         card.Location = New Point(x, y)
         card.Size = New Size(w, h)
         content.Controls.Add(card)
 
-        ' 3D-preview tile
-        Dim tile As New RoundedPanel()
-        tile.CornerRadius = 10
-        tile.FillColor = Color.FromArgb(21, 26, 48)
-        tile.BorderColor = Color.FromArgb(34, 39, 62)
-        tile.Location = New Point(16, 16)
-        tile.Size = New Size(w - 32, 92)
-        AddHandler tile.Paint, Sub(s, e) DrawGlasswareIcon(e.Graphics, tile.Width, tile.Height)
-        card.Controls.Add(tile)
-
-        Dim btnMore As New Label()
-        btnMore.Text = "⋮"
-        btnMore.Font = New Font("Segoe UI", 11, FontStyle.Bold)
-        btnMore.ForeColor = Color.FromArgb(140, 148, 170)
-        btnMore.Size = New Size(24, 22)
-        btnMore.TextAlign = ContentAlignment.MiddleCenter
-        btnMore.Location = New Point(w - 40, 14)
-        btnMore.Cursor = Cursors.Hand
-        AddHandler btnMore.Click, Sub() MessageBox.Show($"Options for '{name}' are coming soon.", "ChemLab Virtual")
-        card.Controls.Add(btnMore)
-        btnMore.BringToFront()
-
-        Dim lblName As New Label()
-        lblName.Text = name
-        lblName.Font = New Font("Segoe UI", 10.5, FontStyle.Bold)
-        lblName.ForeColor = Color.White
-        lblName.AutoSize = True
-        lblName.Location = New Point(16, 116)
-        card.Controls.Add(lblName)
-
-        Dim lblCapacity As New Label()
-        lblCapacity.Text = "Capacity " & capacity
-        lblCapacity.Font = New Font("Segoe UI", 8.5)
-        lblCapacity.ForeColor = Color.FromArgb(140, 148, 170)
-        lblCapacity.AutoSize = True
-        lblCapacity.Location = New Point(16, 136)
-        card.Controls.Add(lblCapacity)
-
-        Dim badge As New Label()
-        badge.Text = "  " & status & "  "
-        badge.Font = New Font("Segoe UI", 8, FontStyle.Bold)
-        badge.AutoSize = True
-        badge.Location = New Point(16, h - 36)
-        If isSelected Then
-            badge.BackColor = Color.FromArgb(108, 92, 231)
-            badge.ForeColor = Color.White
-        ElseIf status = "On bench" Then
-            badge.BackColor = Color.FromArgb(20, 60, 46)
-            badge.ForeColor = Color.FromArgb(120, 220, 170)
-        Else
-            badge.BackColor = Color.FromArgb(30, 34, 56)
-            badge.ForeColor = Color.FromArgb(150, 158, 180)
-        End If
+        Dim difficultyColor = If(exp.Difficulty = "Beginner", Color.FromArgb(120, 220, 170),
+                              If(exp.Difficulty = "Intermediate", Color.FromArgb(230, 170, 100), Color.FromArgb(220, 100, 100)))
+        Dim badge As New Label() With {.Text = "  " & exp.Difficulty & "  ", .Font = New Font("Segoe UI", 8, FontStyle.Bold), .ForeColor = difficultyColor, .BackColor = Color.FromArgb(20, 24, 44), .AutoSize = True, .Location = New Point(16, 16)}
         card.Controls.Add(badge)
 
-        Dim lblDetails As New Label()
-        lblDetails.Text = "Details"
-        lblDetails.Font = New Font("Segoe UI", 9, FontStyle.Underline)
-        lblDetails.ForeColor = Color.FromArgb(150, 130, 240)
-        lblDetails.AutoSize = True
-        lblDetails.Cursor = Cursors.Hand
-        lblDetails.Location = New Point(w - 20 - TextRenderer.MeasureText("Details", lblDetails.Font).Width, h - 34)
-        AddHandler lblDetails.Click, Sub() MessageBox.Show($"Details for '{name}' — capacity {capacity}, status ""{status}"".", "ChemLab Virtual")
-        card.Controls.Add(lblDetails)
+        Dim lblCategory As New Label() With {.Text = exp.Category, .Font = New Font("Segoe UI", 8), .ForeColor = Color.FromArgb(150, 158, 180), .AutoSize = True, .Location = New Point(w - 16 - TextRenderer.MeasureText(exp.Category, New Font("Segoe UI", 8)).Width, 20)}
+        card.Controls.Add(lblCategory)
+
+        Dim lblTitle As New Label() With {.Text = exp.Title, .Font = New Font("Segoe UI", 11.5, FontStyle.Bold), .ForeColor = Color.White, .AutoSize = False, .Size = New Size(w - 32, 44), .Location = New Point(16, 44)}
+        card.Controls.Add(lblTitle)
+
+        Dim lblDesc As New Label() With {.Text = exp.Description, .Font = New Font("Segoe UI", 8.5), .ForeColor = Color.FromArgb(160, 168, 190), .AutoSize = False, .Size = New Size(w - 32, 56), .Location = New Point(16, 84)}
+        card.Controls.Add(lblDesc)
+
+        Dim lblMeta As New Label() With {.Text = $"~{exp.EstDurationMinutes} min  ·  by {exp.AuthorName}", .Font = New Font("Segoe UI", 8), .ForeColor = Color.FromArgb(130, 138, 160), .AutoSize = True, .Location = New Point(16, h - 40)}
+        card.Controls.Add(lblMeta)
+
+        Dim isComplete = progress.ContainsKey(exp.ExperimentId) AndAlso progress(exp.ExperimentId)
+        Dim isStarted = progress.ContainsKey(exp.ExperimentId)
+        Dim expId = exp.ExperimentId
+        Dim title = exp.Title
+
+        If isComplete Then
+            Dim lblDone As New Label() With {.Text = "✓ Completed", .Font = New Font("Segoe UI", 9, FontStyle.Bold), .ForeColor = Color.FromArgb(120, 220, 170), .AutoSize = True, .Location = New Point(16, h - 20)}
+            card.Controls.Add(lblDone)
+        Else
+            Dim btn As New GradientButton() With {.Text = If(isStarted, "Mark complete", "Start experiment"), .Size = New Size(w - 32, 32), .Location = New Point(16, h - 42)}
+            AddHandler btn.Click, Async Sub() Await HandleExperimentActionAsync(expId, title, isStarted)
+            card.Controls.Add(btn)
+        End If
     End Sub
 
-    Private Sub BuildInfoBanner()
-        Dim gridWidth As Integer = Me.ClientSize.Width - sidebar.Width - 72
-        Dim rows As Integer = CInt(Math.Ceiling(apparatusItems.Length / 4.0))
-        Dim bannerY As Integer = 108 + rows * (178 + 20) + 4
+    Private Async Function HandleExperimentActionAsync(experimentId As Integer, title As String, alreadyStarted As Boolean) As Task
+        If experimentId <= 0 OrElse Not currentUserId.HasValue Then
+            MessageBox.Show($"Opens '{title}' (demo — not connected to the database, or your account couldn't be matched).", "ChemLab Virtual")
+            Return
+        End If
 
-        Dim banner As New RoundedPanel()
-        banner.CornerRadius = 12
-        banner.FillColor = Color.FromArgb(16, 20, 40)
-        banner.BorderColor = Color.FromArgb(36, 41, 66)
-        banner.Location = New Point(36, bannerY)
-        banner.Size = New Size(gridWidth, 56)
-        banner.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
-        content.Controls.Add(banner)
-
-        Dim iconCircle As New Panel()
-        iconCircle.Size = New Size(22, 22)
-        iconCircle.Location = New Point(18, 17)
-        AddHandler iconCircle.Paint, Sub(s, e)
-                                          Dim g = e.Graphics
-                                          g.SmoothingMode = SmoothingMode.AntiAlias
-                                          Using pen As New Pen(Color.FromArgb(120, 130, 220), 1.6F)
-                                              g.DrawEllipse(pen, 1, 1, 19, 19)
-                                          End Using
-                                          Using f As New Font("Segoe UI", 9, FontStyle.Bold)
-                                              g.DrawString("i", f, New SolidBrush(Color.FromArgb(120, 130, 220)), 8, 3)
-                                          End Using
-                                      End Sub
-        banner.Controls.Add(iconCircle)
-
-        Dim lblInfo As New Label()
-        lblInfo.Text = "Each apparatus maps to a 3D model with attachment points. Selecting an item highlights its docking sockets on the bench so it can be clamped, heated or filled."
-        lblInfo.Font = New Font("Segoe UI", 9)
-        lblInfo.ForeColor = Color.FromArgb(160, 168, 190)
-        lblInfo.Location = New Point(52, 18)
-        lblInfo.Size = New Size(gridWidth - 70, 34)
-        lblInfo.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
-        banner.Controls.Add(lblInfo)
-    End Sub
+        Try
+            If alreadyStarted Then
+                Await ExperimentsRepository.MarkCompletedAsync(experimentId, currentUserId.Value)
+            Else
+                Await ExperimentsRepository.MarkStartedAsync(experimentId, currentUserId.Value)
+            End If
+            progress = Await ExperimentsRepository.GetProgressForUserAsync(currentUserId.Value)
+            BuildContent()
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't update your progress: {ex.Message}", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Function
 
     ' ===================== SHARED DRAWING =====================
 
@@ -577,7 +512,7 @@ Public Class ApparatusForm
                 g.FillPath(br, path)
             End Using
         End Using
-        DrawNavIcon(g, "flask", Color.White)
+        DrawNavIcon(g, "book", Color.White)
     End Sub
 
     Private Sub PaintAvatar(g As Graphics, w As Integer, h As Integer, initials As String)
@@ -592,31 +527,14 @@ Public Class ApparatusForm
         End Using
     End Sub
 
-    ''' <summary>Simple two-test-tube glyph, centered in the given tile size, used for every card preview.</summary>
-    Private Sub DrawGlasswareIcon(g As Graphics, tileW As Integer, tileH As Integer)
-        g.SmoothingMode = SmoothingMode.AntiAlias
-        Dim accent As Color = Color.FromArgb(94, 234, 212)
-        Dim cx As Single = tileW / 2.0F
-        Dim cy As Single = tileH / 2.0F
-        Dim tubeW As Single = 14
-        Dim tubeH As Single = 44
-        Dim gap As Single = 10
-
-        Using pen As New Pen(accent, 2.4F) With {.StartCap = LineCap.Round, .EndCap = LineCap.Round}
-            For Each dx In New Single() {-(tubeW + gap) / 2, (tubeW + gap) / 2}
-                Dim topY As Single = cy - tubeH / 2
-                Dim botY As Single = cy + tubeH / 2
-                Dim leftX As Single = cx + dx - tubeW / 2
-                Dim rightX As Single = cx + dx + tubeW / 2
-                g.DrawLine(pen, leftX, topY, leftX, botY - 6)
-                g.DrawLine(pen, rightX, topY, rightX, botY - 6)
-                Dim path As New GraphicsPath()
-                path.AddArc(leftX, botY - 12, tubeW, 12, 0, 180)
-                g.DrawPath(pen, path)
-                g.DrawLine(pen, leftX - 3, topY, rightX + 3, topY)
-            Next
-        End Using
-    End Sub
+    Private Function GetInitials(fullName As String) As String
+        If String.IsNullOrWhiteSpace(fullName) Then Return "?"
+        Dim parts = fullName.Split(New Char() {" "c}, StringSplitOptions.RemoveEmptyEntries)
+        If parts.Length >= 2 Then Return (parts(0).Substring(0, 1) & parts(1).Substring(0, 1)).ToUpper()
+        If parts.Length = 1 AndAlso parts(0).Length >= 2 Then Return parts(0).Substring(0, 2).ToUpper()
+        If parts.Length = 1 Then Return parts(0).ToUpper()
+        Return "?"
+    End Function
 
     Private Sub DrawNavIcon(g As Graphics, key As String, color As Color)
         g.SmoothingMode = SmoothingMode.AntiAlias

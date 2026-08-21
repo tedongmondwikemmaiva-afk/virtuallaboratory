@@ -585,6 +585,17 @@ Public Class LoginForm
                 Return
             End If
 
+            ' Maintenance mode locks everyone out except Admins, so an Admin can
+            ' always get in to flip the setting back off.
+            If user.Role <> "Admin" Then
+                Dim maintenanceOn = Await SettingsRepository.GetBoolAsync("maintenance_mode", False)
+                If maintenanceOn Then
+                    MessageBox.Show("ChemLab Virtual is temporarily down for maintenance. Please try again shortly.",
+                                     "Sign in", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    Return
+                End If
+            End If
+
             SignedInRole = user.Role
             SignedInName = user.DisplayName
             Outcome = LoginOutcome.SignedIn

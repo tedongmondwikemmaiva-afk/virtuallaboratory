@@ -1,6 +1,8 @@
 Imports System.Drawing
 Imports System.Drawing.Drawing2D
+Imports System.Linq
 Imports System.Runtime.InteropServices
+Imports System.Threading.Tasks
 Imports System.Windows.Forms
 
 ''' <summary>
@@ -29,7 +31,9 @@ Public Class TeacherDashboardForm
     Private content As Panel
 
     ' Student, Class, Completed ("14/20"), Average ("86%"), Status ("In lab" / "Offline")
-    Private ReadOnly students As (String, String, String, String, String)() = {
+    ' Offline fallback shown immediately; LoadFromDbAsync() (fired from Form.Load)
+    ' replaces this with real roster data (and re-renders) once it arrives.
+    Private students As (String, String, String, String, String)() = {
         ("Mac Falen", "Grade 11-B", "14/20", "86%", "In lab"),
         ("Aisha Bello", "Grade 11-B", "17/20", "91%", "In lab"),
         ("Tom Meier", "Grade 11-A", "9/20", "68%", "Offline"),
@@ -37,17 +41,22 @@ Public Class TeacherDashboardForm
         ("Kwame Adjei", "Grade 12-C", "20/20", "94%", "In lab")
     }
 
-    ' Class label, average score out of 100
-    Private ReadOnly classAverages As (String, Integer)() = {
+    ' Class label, average score out of 100. Same offline-fallback pattern.
+    Private classAverages As (String, Integer)() = {
         ("11-A", 72), ("11-B", 78), ("12-C", 85), ("12-D", 55)
     }
 
-    ' Report/quiz title, student name
-    Private ReadOnly gradingQueue As (String, String)() = {
-        ("Titration report", "Aisha Bello"),
-        ("Gas Evolution report", "Tom Meier"),
-        ("Flame Test quiz", "Lina Ortiz")
+    ' Assessment id (0 for offline fallback rows — can't be graded for real),
+    ' report/quiz title, student name. Same offline-fallback pattern.
+    Private gradingQueue As (Integer, String, String)() = {
+        (0, "Titration report", "Aisha Bello"),
+        (0, "Gas Evolution report", "Tom Meier"),
+        (0, "Flame Test quiz", "Lina Ortiz")
     }
+
+    ' Offline fallback for the four stat cards.
+    Private teacherStats As (StudentsEnrolled As Integer, LiveInLabNow As Integer, AwaitingGrading As Integer, ClassAverage As Decimal) =
+        (128, 23, 11, 81D)
 
     Public Sub New(Optional displayName As String = "Mac Falen", Optional role As String = "Teacher")
         userName = If(String.IsNullOrWhiteSpace(displayName), "Teacher", displayName)
@@ -73,7 +82,41 @@ Public Class TeacherDashboardForm
                                        BuildContent()
                                    End If
                                End Sub
+
+        AddHandler Me.Load, Sub(s, e) LoadFromDbAsync(s, e)
     End Sub
+
+    ''' <summary>
+    ''' Loads real stats, roster, class averages, and grading queue from the
+    ''' database, replacing the offline fallback and re-rendering. Silently
+    ''' keeps the fallback if the database isn't reachable.
+    ''' </summary>
+    Private Async Function LoadFromDbAsync(sender As Object, e As EventArgs) As Task
+        Try
+            Dim statsTask = TeacherRepository.GetStatsAsync()
+            Dim studentsTask = TeacherRepository.GetStudentsOverviewAsync()
+            Dim classAvgTask = TeacherRepository.GetClassAveragesAsync()
+            Dim queueTask = TeacherRepository.GetGradingQueueAsync()
+            Await Task.WhenAll(statsTask, studentsTask, classAvgTask, queueTask)
+
+            teacherStats = (statsTask.Result.StudentsEnrolled, statsTask.Result.LiveInLabNow,
+                             statsTask.Result.AwaitingGrading, statsTask.Result.ClassAverage)
+
+            If studentsTask.Result.Count > 0 Then
+                students = studentsTask.Result.Select(Function(s) (s.Name, s.ClassName, s.Completed, s.Average, s.Status)).ToArray()
+            End If
+            If classAvgTask.Result.Count > 0 Then
+                classAverages = classAvgTask.Result.Select(Function(c) (c.ClassName, c.Average)).ToArray()
+            End If
+            ' Grading queue legitimately can be empty (nothing pending), so
+            ' replace unconditionally rather than only when non-empty.
+            gradingQueue = queueTask.Result.Select(Function(q) (q.AssessmentId, q.Title, q.StudentName)).ToArray()
+
+            BuildContent()
+        Catch ex As Exception
+            Debug.WriteLine($"Could not load teacher dashboard data from database: {ex.Message}")
+        End Try
+    End Function
 
     ' ===================== TITLE BAR =====================
 
@@ -318,6 +361,16 @@ Public Class TeacherDashboardForm
                                              End Sub
             AddHandler item.Click, openReports
             AddHandler lbl.Click, openReports
+        ElseIf iconKey = "book" Then
+            Dim openExperiments As EventHandler = Sub()
+                                                       Try
+                                                           NavigateToForm(New ExperimentsForm(userName, userRole))
+                                                       Catch ex As Exception
+                                                           MessageBox.Show($"Failed to open Experiments: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                                       End Try
+                                                   End Sub
+            AddHandler item.Click, openExperiments
+            AddHandler lbl.Click, openExperiments
         ElseIf iconKey = "question" Then
             Dim openQuizzes As EventHandler = Sub()
                                                    Try
@@ -420,10 +473,10 @@ Public Class TeacherDashboardForm
 
     Private Sub BuildStatCards()
         Dim stats As (String, String, String, Color)() = {
-            ("person", "Students enrolled", "128", Color.FromArgb(108, 92, 231)),
-            ("live", "Live in lab now", "23", Color.FromArgb(92, 150, 231)),
-            ("clipboard", "Awaiting grading", "11", Color.FromArgb(92, 130, 200)),
-            ("target", "Class average", "81%", Color.FromArgb(150, 92, 231))
+            ("person", "Students enrolled", teacherStats.StudentsEnrolled.ToString(), Color.FromArgb(108, 92, 231)),
+            ("live", "Live in lab now", teacherStats.LiveInLabNow.ToString(), Color.FromArgb(92, 150, 231)),
+            ("clipboard", "Awaiting grading", teacherStats.AwaitingGrading.ToString(), Color.FromArgb(92, 130, 200)),
+            ("target", "Class average", $"{Math.Round(teacherStats.ClassAverage, 0)}%", Color.FromArgb(150, 92, 231))
         }
         Dim gap As Integer = 20
         Dim totalW As Integer = content.Width - 72
@@ -563,10 +616,13 @@ Public Class TeacherDashboardForm
 
             Dim lblClass As New Label()
             lblClass.Text = s.Item2
-            lblClass.Font = New Font("Segoe UI", 9)
-            lblClass.ForeColor = Color.FromArgb(160, 168, 190)
+            lblClass.Font = New Font("Segoe UI", 9, If(s.Item2 = "Unassigned", FontStyle.Underline, FontStyle.Regular))
+            lblClass.ForeColor = If(s.Item2 = "Unassigned", Color.FromArgb(150, 130, 240), Color.FromArgb(160, 168, 190))
             lblClass.AutoSize = True
             lblClass.Location = New Point(colX(1), rowY)
+            lblClass.Cursor = Cursors.Hand
+            Dim studentName = s.Item1
+            AddHandler lblClass.Click, Async Sub() Await HandleSetClassClickAsync(studentName)
             panel.Controls.Add(lblClass)
 
             Dim lblCompleted As New Label()
@@ -740,8 +796,12 @@ Public Class TeacherDashboardForm
 
         Dim rowY As Integer = 50
         For Each item In gradingQueue
+            Dim assessmentId = item.Item1
+            Dim title = item.Item2
+            Dim studentName = item.Item3
+
             Dim lblItem As New Label()
-            lblItem.Text = item.Item1 & " — " & item.Item2
+            lblItem.Text = title & " — " & studentName
             lblItem.Font = New Font("Segoe UI", 9)
             lblItem.ForeColor = Color.FromArgb(200, 206, 224)
             lblItem.AutoSize = True
@@ -757,13 +817,65 @@ Public Class TeacherDashboardForm
             lblGrade.Cursor = Cursors.Hand
             lblGrade.Anchor = AnchorStyles.Top Or AnchorStyles.Right
             lblGrade.Location = New Point(rightW - 20 - TextRenderer.MeasureText("⟳ Grade", lblGrade.Font).Width, rowY - 1)
-            Dim capturedItem = item
-            AddHandler lblGrade.Click, Sub() MessageBox.Show($"Opens grading for '{capturedItem.Item1}' — {capturedItem.Item2}.", "ChemLab Virtual")
+            AddHandler lblGrade.Click, Async Sub() Await HandleGradeClickAsync(assessmentId, title, studentName)
             panel.Controls.Add(lblGrade)
 
             rowY += 34
         Next
     End Sub
+
+    ''' <summary>
+    ''' Prompts for a score and marks the assessment Graded. Offline fallback
+    ''' rows (assessmentId = 0) just show the old demo message since there's no
+    ''' real database row behind them.
+    ''' </summary>
+    Private Async Function HandleGradeClickAsync(assessmentId As Integer, title As String, studentName As String) As Task
+        If assessmentId <= 0 Then
+            MessageBox.Show($"Opens grading for '{title}' — {studentName} (demo — not connected to the database).", "ChemLab Virtual")
+            Return
+        End If
+
+        Dim input = Microsoft.VisualBasic.Interaction.InputBox(
+            $"Enter a score (0-100) for '{title}' — {studentName}:", "Grade assessment", "")
+        If String.IsNullOrWhiteSpace(input) Then Return ' cancelled
+
+        Dim score As Integer
+        If Not Integer.TryParse(input.Trim(), score) OrElse score < 0 OrElse score > 100 Then
+            MessageBox.Show("Please enter a whole number between 0 and 100.", "Grade assessment", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End If
+
+        Try
+            Await TeacherRepository.GradeAssessmentAsync(assessmentId, score, userName)
+            Await LoadFromDbAsync(Nothing, EventArgs.Empty)
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't save this grade: {ex.Message}", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Function
+
+    ''' <summary>Lets a teacher click any student's class ("Unassigned" or otherwise) and set it via a quick prompt.</summary>
+    Private Async Function HandleSetClassClickAsync(studentName As String) As Task
+        Dim input = Microsoft.VisualBasic.Interaction.InputBox(
+            $"Set {studentName}'s class (e.g. ""Grade 11-B""). Leave blank to unassign:", "Set class", "")
+
+        ' InputBox returns "" both for "left blank on purpose" and "clicked Cancel" —
+        ' there's no reliable way to tell those apart, so treat blank as "no change"
+        ' rather than risk silently un-assigning a class the teacher didn't mean to clear.
+        If input Is Nothing Then Return
+        If input.Trim().Length = 0 Then Return
+
+        Try
+            Dim studentId = Await UsersRepository.FindUserIdByDisplayNameAsync(studentName)
+            If Not studentId.HasValue Then
+                MessageBox.Show($"Couldn't find {studentName} in the database (this row may be offline fallback data).", "ChemLab Virtual")
+                Return
+            End If
+            Await TeacherRepository.SetStudentClassAsync(studentId.Value, input.Trim(), userName)
+            Await LoadFromDbAsync(Nothing, EventArgs.Empty)
+        Catch ex As Exception
+            MessageBox.Show($"Couldn't update this student's class: {ex.Message}", "ChemLab Virtual", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Function
 
     ' ===================== SHARED DRAWING =====================
 

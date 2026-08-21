@@ -137,6 +137,11 @@ Public Class CreateAccountForm
         Dim clickedButton As Control = TryCast(sender, Control)
         If clickedButton IsNot Nothing Then clickedButton.Enabled = False
         Try
+            If Not Await SettingsRepository.GetBoolAsync("allow_new_signups", True) Then
+                ShowStatus("New account registration is currently closed. Please contact your administrator.", False)
+                Return
+            End If
+
             If Await UsersRepository.EmailExistsAsync(emailVal) Then
                 ShowStatus("An account with that email already exists.", False)
                 Return

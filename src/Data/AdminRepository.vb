@@ -1,3 +1,5 @@
+Imports System.Threading.Tasks
+
 ''' <summary>Backs AdminDashboardForm's "Pending teacher approvals" and "Recent activity" panels.</summary>
 Public Module AdminRepository
 
@@ -68,6 +70,127 @@ Public Module AdminRepository
         If delta.TotalMinutes < 60 Then Return $"{CInt(delta.TotalMinutes)} min ago"
         If delta.TotalHours < 24 Then Return $"{CInt(delta.TotalHours)} hr ago"
         Return $"{CInt(delta.TotalDays)} d ago"
+    End Function
+
+    ' ===================== Students page =====================
+
+    Public Class StudentDto
+        Public Property UserId As Integer
+        Public Property DisplayName As String
+        Public Property Email As String
+        Public Property JoinedText As String
+        Public Property LastLoginText As String
+        Public Property IsActive As Boolean
+    End Class
+
+    Public Async Function GetAllStudentsAsync() As Task(Of List(Of StudentDto))
+        Const sql As String = "
+            SELECT user_id, display_name, email, created_at, last_login_at, is_active
+            FROM users
+            WHERE role = 'Student'
+            ORDER BY display_name"
+
+        Return Await Db.QueryAsync(Of StudentDto)(
+            sql,
+            Function(r) New StudentDto With {
+                .UserId = r.GetInt32("user_id"),
+                .DisplayName = r.GetString("display_name"),
+                .Email = r.GetString("email"),
+                .JoinedText = r.GetDateTime("created_at").ToString("dd MMM yyyy"),
+                .LastLoginText = If(r.IsDBNull(r.GetOrdinal("last_login_at")), "Never", r.GetDateTime("last_login_at").ToString("dd MMM yyyy")),
+                .IsActive = r.GetBoolean("is_active")
+            })
+    End Function
+
+    Public Async Function SetStudentActiveAsync(userId As Integer, isActive As Boolean, actorName As String) As Task
+        Await Db.ExecuteAsync(
+            "UPDATE users SET is_active = @active WHERE user_id = @id",
+            New Dictionary(Of String, Object) From {{"@active", isActive}, {"@id", userId}})
+        Await UsersRepository.LogActivityAsync(Nothing, If(isActive, "student_reactivated", "student_deactivated"),
+                                                 $"{actorName} {If(isActive, "reactivated", "deactivated")} student account #{userId}")
+    End Function
+
+    ' ===================== Teachers page =====================
+
+    Public Class TeacherDto
+        Public Property UserId As Integer
+        Public Property DisplayName As String
+        Public Property Email As String
+        Public Property ApprovalStatus As String ' "Approved" / "Pending" / "Denied"
+        Public Property JoinedText As String
+    End Class
+
+    Public Async Function GetAllTeachersAsync() As Task(Of List(Of TeacherDto))
+        Const sql As String = "
+            SELECT user_id, display_name, email, approval_status, created_at
+            FROM users
+            WHERE role = 'Teacher'
+            ORDER BY FIELD(approval_status, 'Pending', 'Approved', 'Denied'), display_name"
+
+        Return Await Db.QueryAsync(Of TeacherDto)(
+            sql,
+            Function(r) New TeacherDto With {
+                .UserId = r.GetInt32("user_id"),
+                .DisplayName = r.GetString("display_name"),
+                .Email = r.GetString("email"),
+                .ApprovalStatus = r.GetString("approval_status"),
+                .JoinedText = r.GetDateTime("created_at").ToString("dd MMM yyyy")
+            })
+    End Function
+
+    ' ===================== Reports page =====================
+
+    Public Class PlatformStatsDto
+        Public Property TotalStudents As Integer
+        Public Property TotalTeachers As Integer
+        Public Property PendingTeachers As Integer
+        Public Property TotalQuizAttempts As Integer
+        Public Property AverageQuizScore As Decimal
+        Public Property TotalAssessments As Integer
+        Public Property AverageAssessmentScore As Decimal
+    End Class
+
+    Public Async Function GetPlatformStatsAsync() As Task(Of PlatformStatsDto)
+        Dim result As New PlatformStatsDto()
+
+        result.TotalStudents = CInt(Await Db.ScalarAsync(Of Long)("SELECT COUNT(*) FROM users WHERE role = 'Student'"))
+        result.TotalTeachers = CInt(Await Db.ScalarAsync(Of Long)("SELECT COUNT(*) FROM users WHERE role = 'Teacher' AND approval_status = 'Approved'"))
+        result.PendingTeachers = CInt(Await Db.ScalarAsync(Of Long)("SELECT COUNT(*) FROM users WHERE role = 'Teacher' AND approval_status = 'Pending'"))
+        result.TotalQuizAttempts = CInt(Await Db.ScalarAsync(Of Long)("SELECT COUNT(*) FROM quiz_attempts WHERE submitted_at IS NOT NULL"))
+
+        Dim avgQuiz = Await Db.ScalarAsync(Of Decimal)("SELECT AVG(score_percent) FROM quiz_attempts WHERE submitted_at IS NOT NULL")
+        result.AverageQuizScore = avgQuiz
+
+        result.TotalAssessments = CInt(Await Db.ScalarAsync(Of Long)("SELECT COUNT(*) FROM assessments WHERE status = 'Graded'"))
+        Dim avgAssessment = Await Db.ScalarAsync(Of Decimal)("SELECT AVG(score_percent) FROM assessments WHERE status = 'Graded'")
+        result.AverageAssessmentScore = avgAssessment
+
+        Return result
+    End Function
+
+    Public Class TopStudentDto
+        Public Property DisplayName As String
+        Public Property AverageScore As Decimal
+        Public Property AssessmentCount As Integer
+    End Class
+
+    Public Async Function GetTopStudentsAsync(Optional limit As Integer = 5) As Task(Of List(Of TopStudentDto))
+        Dim sql As String = $"
+            SELECT u.display_name, AVG(a.score_percent) AS avg_score, COUNT(*) AS assessment_count
+            FROM assessments a
+            JOIN users u ON u.user_id = a.user_id
+            WHERE a.status = 'Graded'
+            GROUP BY u.user_id, u.display_name
+            ORDER BY avg_score DESC
+            LIMIT {Math.Max(1, limit)}"
+
+        Return Await Db.QueryAsync(Of TopStudentDto)(
+            sql,
+            Function(r) New TopStudentDto With {
+                .DisplayName = r.GetString("display_name"),
+                .AverageScore = r.GetDecimal("avg_score"),
+                .AssessmentCount = r.GetInt32("assessment_count")
+            })
     End Function
 
 End Module

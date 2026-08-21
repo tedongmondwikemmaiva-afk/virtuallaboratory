@@ -59,10 +59,22 @@ Public Module UsersRepository
         Return user
     End Function
 
-    ''' <summary>Creates a new account. Students are auto-approved; Teachers need Admin approval.</summary>
+    ''' <summary>
+    ''' Creates a new account. Students are always auto-approved. Whether Teachers
+    ''' need Admin approval is governed by the "require_teacher_approval" system
+    ''' setting — if an Admin turns that off, new Teacher signups are approved
+    ''' immediately instead of landing in the Pending queue.
+    ''' </summary>
     Public Async Function CreateAccountAsync(displayName As String, email As String, plainPassword As String, role As String) As Task(Of Long)
         Dim hash = Global.BCrypt.Net.BCrypt.HashPassword(plainPassword) ' work factor defaults to 11, that's fine
-        Dim approvalStatus = If(role = "Teacher", "Pending", "Approved")
+
+        Dim approvalStatus As String
+        If role = "Teacher" Then
+            Dim requireApproval = Await SettingsRepository.GetBoolAsync("require_teacher_approval", True)
+            approvalStatus = If(requireApproval, "Pending", "Approved")
+        Else
+            approvalStatus = "Approved"
+        End If
 
         Const sql As String = "
             INSERT INTO users (display_name, email, password_hash, role, approval_status)
